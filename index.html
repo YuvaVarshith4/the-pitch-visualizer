@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.25">
+    <title>Pitch Visualizer | Universal Narrative Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            zoom: 1.15;
+        }
+        .brand-font { font-family: 'Playfair Display', serif; }
+        
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        .animate-gradient {
+            background-size: 200% 200%;
+            animation: gradient-shift 8s ease infinite;
+        }
+        
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+        .pulse-ring::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: inherit;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+            z-index: -1;
+            animation: pulse-ring 2s ease-out infinite;
+        }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .input-focus:focus {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        
+        .storyboard-card {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .storyboard-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .loading-shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        .phase-indicator {
+            transition: all 0.3s ease;
+        }
+        .phase-indicator.active {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+            transform: scale(1.05);
+        }
+        
+        .secure-badge {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50/30 text-slate-800 min-h-screen relative overflow-x-hidden">
+
+    <!-- Ambient Background Shapes -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+        <!-- Soft gradient orb top-right -->
+        <div class="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-blue-100/60 via-indigo-100/40 to-purple-100/30 blur-3xl"></div>
+        <!-- Soft gradient orb bottom-left -->
+        <div class="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full bg-gradient-to-tr from-cyan-50/50 via-blue-50/40 to-indigo-50/30 blur-3xl"></div>
+        <!-- Subtle center accent -->
+        <div class="absolute top-1/3 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full bg-gradient-to-r from-violet-50/30 via-fuchsia-50/20 to-pink-50/30 blur-3xl"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="border-b border-slate-200/60 bg-white/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-slate-900 tracking-tight">Pitch Visualizer</h1>
+                    <p class="text-xs text-slate-500 font-medium">Corporate & Daily Life Scenarios</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 cursor-help" title="PHASE B: Zero-Trust Security - Automatically detects and masks PII (names, emails, money) before sending to AI. Prevents data leakage.">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="text-xs font-medium text-emerald-700">SecOps Active</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-200 cursor-help" title="PHASE C: Archetype AI Engine - Analyzes your narrative and classifies scenes (crisis, joy, struggle, etc.) to generate context-appropriate visuals with matched lighting & characters.">
+                    <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                    <span class="text-xs font-medium text-indigo-700">17 Archetypes</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 cursor-help" title="PHASE E: Cryptographic Watermark - Every image is embedded with AES-128 encrypted tracking data. Use decoder_gui.py to extract hidden metadata from any storyboard image.">
+                    <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                    <span class="text-xs font-medium text-blue-700">AES-128</span>
+                </div>
+                <button id="galleryToggleBtn" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all">
+                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                    </svg>
+                    <span class="text-xs font-medium text-slate-600">Gallery</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-6 py-12">
+        <!-- Hero Section -->
+        <div class="text-center mb-12">
+            <h2 class="brand-font text-5xl font-bold bg-gradient-to-r from-slate-900 via-indigo-900 to-purple-900 bg-clip-text text-transparent mb-4">
+                Transform Any Narrative Into Visual Stories
+            </h2>
+            <p class="text-slate-600 text-lg max-w-2xl mx-auto leading-relaxed">
+                AI-powered cinematic storyboarding for business pitches, personal stories, and daily life moments.
+                <span class="text-indigo-600 font-medium">17 scene archetypes</span> with context-aware characters & lighting.
+            </p>
+        </div>
+
+        <!-- Input Card -->
+        <div class="glass-card rounded-2xl shadow-xl shadow-slate-200/50 p-8 mb-12 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+            
+            <form id="pitchForm" class="space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <div class="lg:col-span-1">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+                            </svg>
+                            Visual Style
+                        </label>
+                        <select id="styleSelect" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all input-focus cursor-pointer hover:bg-white">
+                            <option value="Cinematic Photorealism, 8k, highly detailed">Cinematic Photorealism</option>
+                            <option value="Flat corporate vector art, clean lines, minimalist">Corporate Vector Art</option>
+                            <option value="Cyberpunk, neon lighting, dark background">Cyberpunk Neon</option>
+                            <option value="Soft watercolor, bright and optimistic">Optimistic Watercolor</option>
+                        </select>
+                    </div>
+                    <div class="lg:col-span-3">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                            Your Narrative
+                            <span class="text-xs font-normal text-slate-400 ml-auto">Business, personal, or daily life stories</span>
+                        </label>
+                        <textarea id="narrativeInput" rows="4" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all input-focus resize-none" placeholder="Business: CFO Victoria Zhang discovered a $12M inventory discrepancy. Our team deployed blockchain verification across 47 centers. Recovered full value within one week.&#10;&#10;Personal: Jamie, 22, overwhelmed with nursing school, met an elderly mentor at a park bench who shared wisdom about becoming a doctor at 40..."></textarea>
+                    </div>
+                </div>
+                <button type="submit" id="generateBtn" class="group relative w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-700 hover:via-purple-700 hover:to-indigo-700 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30 overflow-hidden">
+                    <span class="relative z-10 flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5 transition-transform group-hover:rotate-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                        </svg>
+                        Generate Storyboard
+                    </span>
+                    <div class="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                </button>
+            </form>
+            
+            <!-- Archetype Legend -->
+            <div class="mt-6 p-4 bg-slate-50/50 rounded-xl border border-slate-100">
+                <p class="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wider">Supported Scene Archetypes</p>
+                <div class="flex flex-wrap gap-2">
+                    <span class="px-2 py-1 bg-red-50 text-red-700 text-xs rounded-md font-medium">crisis</span>
+                    <span class="px-2 py-1 bg-orange-50 text-orange-700 text-xs rounded-md font-medium">conflict</span>
+                    <span class="px-2 py-1 bg-amber-50 text-amber-700 text-xs rounded-md font-medium">struggle</span>
+                    <span class="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md font-medium">discovery</span>
+                    <span class="px-2 py-1 bg-cyan-50 text-cyan-700 text-xs rounded-md font-medium">action</span>
+                    <span class="px-2 py-1 bg-gray-50 text-gray-700 text-xs rounded-md font-medium">routine</span>
+                    <span class="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-md font-medium">outcome</span>
+                    <span class="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-md font-medium">connection</span>
+                    <span class="px-2 py-1 bg-yellow-50 text-yellow-700 text-xs rounded-md font-medium">joy</span>
+                    <span class="px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded-md font-medium">relationship</span>
+                    <span class="px-2 py-1 bg-pink-50 text-pink-700 text-xs rounded-md font-medium">growth</span>
+                    <span class="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-md font-medium">transition</span>
+                    <span class="px-2 py-1 bg-slate-50 text-slate-700 text-xs rounded-md font-medium">reflection</span>
+                    <span class="px-2 py-1 bg-teal-50 text-teal-700 text-xs rounded-md font-medium">exploration</span>
+                    <span class="px-2 py-1 bg-stone-50 text-stone-700 text-xs rounded-md font-medium">loss</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-2">Each archetype triggers unique lighting, camera angles, and emotional framing. Characters adapt to scene context.</p>
+            </div>
+            
+            <!-- Streaming Progress Panel -->
+            <div id="statusMessage" class="mt-6 hidden">
+                <div class="progress-panel rounded-2xl p-6 shadow-lg">
+                    <!-- Header with Time Estimate -->
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-indigo-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <span id="statusText" class="font-semibold text-slate-700 block">Starting generation...</span>
+                                <span id="timeEstimate" class="text-sm text-slate-500"></span>
+                            </div>
+                        </div>
+                        <button id="cancelBtn" class="cancel-btn px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            Cancel
+                        </button>
+                    </div>
+                    
+                    <!-- Overall Progress Bar -->
+                    <div class="mb-6">
+                        <div class="flex justify-between text-sm text-slate-600 mb-2">
+                            <span>Overall Progress</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div id="progressFill" class="progress-bar-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Per-Panel Status Grid -->
+                    <div id="panelStatusGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <!-- Panel status cards will be inserted here dynamically -->
+                    </div>
+                    
+                    <!-- Phase Indicators -->
+                    <div class="mt-4 pt-4 border-t border-slate-200 grid grid-cols-5 gap-2 text-center text-xs">
+                        <div class="phase-indicator py-2 px-1 rounded-lg bg-slate-100 text-slate-600 font-medium" data-phase="1">Ingestion</div>
+                        <div class="phase-indicator py-2 px-1 rounded-lg bg-slate-100 text-slate-600 font-medium" data-phase="2">SecOps</div>
+                        <div class="phase-indicator py-2 px-1 rounded-lg bg-slate-100 text-slate-600 font-medium" data-phase="3">Archetype AI</div>
+                        <div class="phase-indicator py-2 px-1 rounded-lg bg-slate-100 text-slate-600 font-medium" data-phase="4">Generation</div>
+                        <div class="phase-indicator py-2 px-1 rounded-lg bg-slate-100 text-slate-600 font-medium" data-phase="5">Watermark</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gallery Tab -->
+        <div id="gallerySection" class="hidden mb-12">
+            <div class="glass-card rounded-2xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                        Previous Storyboards
+                    </h3>
+                    <button id="clearGalleryBtn" class="text-sm text-red-500 hover:text-red-700 font-medium">
+                        Clear History
+                    </button>
+                </div>
+                <div id="galleryGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <!-- Gallery items will be loaded here -->
+                </div>
+                <p id="emptyGalleryMsg" class="text-center text-slate-500 py-8 hidden">No previous storyboards found</p>
+            </div>
+        </div>
+
+        <!-- Storyboard Section -->
+        <div id="storyboardSection" class="hidden">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                <div>
+                    <h3 class="text-2xl font-bold text-slate-900 mb-1">Your Visual Story</h3>
+                    <p id="globalSetting" class="text-sm text-slate-500 flex items-center gap-2"></p>
+                </div>
+                <button id="devToggle" class="group flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all hover:shadow-lg hover:shadow-slate-500/20">
+                    <svg class="w-4 h-4 text-indigo-400 group-hover:text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    Director's Cut
+                </button>
+            </div>
+
+            <div id="storyboardGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            </div>
+            
+            <!-- System Features Panel -->
+            <div class="mt-10 glass-card rounded-2xl p-6 border border-indigo-100/50">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-slate-900">Universal Narrative Engine</h4>
+                        <p class="text-xs text-slate-500">Business, personal & daily life stories • Secured & watermarked</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="flex items-start gap-3 p-3 rounded-xl bg-white/50 border border-slate-100">
+                        <div class="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm text-slate-800">Zero-Trust SecOps</p>
+                            <p class="text-xs text-slate-500">PII & sensitive data auto-masked</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 p-3 rounded-xl bg-white/50 border border-slate-100">
+                        <div class="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm text-slate-800">17 Archetype Engine</p>
+                            <p class="text-xs text-slate-500">Crisis, joy, struggle, connection & more</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-3 p-3 rounded-xl bg-white/50 border border-slate-100">
+                        <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm text-slate-800">Traceable Assets</p>
+                            <p class="text-xs text-slate-500">AES-128 encrypted watermarks</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let phaseInterval;
+        let eventSource = null;
+        let currentGenerationData = null;
+        let failedPanels = [];
+        
+        // Gallery Management
+        function loadGallery() {
+            const gallery = JSON.parse(localStorage.getItem('storyboardGallery') || '[]');
+            const galleryGrid = document.getElementById('galleryGrid');
+            const emptyMsg = document.getElementById('emptyGalleryMsg');
+            
+            galleryGrid.innerHTML = '';
+            
+            if (gallery.length === 0) {
+                emptyMsg.classList.remove('hidden');
+                return;
+            }
+            
+            emptyMsg.classList.add('hidden');
+            
+            // Sort by newest first
+            gallery.reverse().forEach((item, index) => {
+                const galleryItem = document.createElement('div');
+                galleryItem.className = 'gallery-item bg-white rounded-xl shadow-md overflow-hidden border border-slate-100 cursor-pointer';
+                galleryItem.innerHTML = `
+                    <div class="relative pb-[75%] bg-slate-100">
+                        ${item.thumbnail ? `
+                            <img src="${item.thumbnail}" class="absolute top-0 left-0 w-full h-full object-cover" alt="Storyboard">
+                        ` : `
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <svg class="w-12 h-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                            </div>
+                        `}
+                    </div>
+                    <div class="p-3">
+                        <p class="text-xs text-slate-500">${new Date(item.timestamp).toLocaleDateString()}</p>
+                        <p class="text-sm font-medium text-slate-700 truncate">${item.narrativePreview}</p>
+                        <p class="text-xs text-indigo-600 mt-1">${item.scenes} scenes • ${item.successfulImages}/${item.totalImages} images</p>
+                    </div>
+                `;
+                galleryItem.addEventListener('click', () => loadStoryboardFromHistory(item));
+                galleryGrid.appendChild(galleryItem);
+            });
+        }
+        
+        function saveToGallery(data) {
+            const gallery = JSON.parse(localStorage.getItem('storyboardGallery') || '[]');
+            const firstImage = data.scenes.find(s => s.image_path)?.image_path;
+            
+            const item = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                narrativePreview: data.scenes[0]?.original_text?.substring(0, 50) + '...' || 'Storyboard',
+                scenes: data.scenes.length,
+                totalImages: data.scenes.length,
+                successfulImages: data.successful_images,
+                thumbnail: firstImage ? `http://localhost:8000${firstImage}` : null,
+                data: data
+            };
+            
+            gallery.push(item);
+            // Keep only last 20
+            if (gallery.length > 20) gallery.shift();
+            
+            localStorage.setItem('storyboardGallery', JSON.stringify(gallery));
+        }
+        
+        function loadStoryboardFromHistory(item) {
+            const storyboardSection = document.getElementById('storyboardSection');
+            const grid = document.getElementById('storyboardGrid');
+            const globalSetting = document.getElementById('globalSetting');
+            
+            grid.innerHTML = '';
+            
+            globalSetting.innerHTML = `
+                <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                ${new Date(item.timestamp).toLocaleString()} • ${item.scenes} scenes
+            `;
+            
+            item.data.scenes.forEach((scene, index) => {
+                renderPanel(scene, index, grid);
+            });
+            
+            storyboardSection.classList.remove('hidden');
+            storyboardSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function renderPanel(scene, index, grid) {
+            const panel = document.createElement('div');
+            panel.className = 'storyboard-card bg-white rounded-2xl shadow-lg shadow-slate-200/50 overflow-hidden border border-slate-100 flex flex-col';
+            panel.id = `panel-${index}`;
+            
+            const hasImage = scene.image_path && scene.image_generated;
+            const imageUrl = hasImage ? `http://localhost:8000${scene.image_path}` : '';
+            
+            panel.innerHTML = `
+                <div class="relative pb-[75%] bg-slate-100 overflow-hidden group">
+                    ${hasImage ? `
+                        <img src="${imageUrl}" alt="Panel ${index + 1}" class="absolute top-0 left-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    ` : `
+                        <div class="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-50">
+                            <div class="absolute inset-0 opacity-30" style="background-image: radial-gradient(circle at 2px 2px, #cbd5e1 1px, transparent 0); background-size: 24px 24px;"></div>
+                            <div class="text-center relative z-10">
+                                <div class="w-20 h-20 rounded-2xl bg-white shadow-lg shadow-slate-200/50 flex items-center justify-center mb-4 mx-auto border border-slate-100">
+                                    <svg class="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                </div>
+                                <p class="text-sm font-medium text-slate-500">Image generation failed</p>
+                                <button class="retry-btn mt-2" data-panel="${index}">Retry Panel</button>
+                            </div>
+                        </div>
+                    `}
+                    
+                    ${hasImage ? `
+                        <div class="absolute top-3 right-3 secure-badge text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 backdrop-blur-sm">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                            </svg>
+                            AES-128
+                        </div>
+                        ${scene.scene_archetype ? `
+                        <div class="absolute top-3 left-3 bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm capitalize">
+                            ${scene.scene_archetype}
+                        </div>` : ''}
+                    ` : ''}
+                    
+                    <div class="absolute bottom-3 left-3 w-8 h-8 rounded-lg bg-white/90 backdrop-blur-sm flex items-center justify-center text-sm font-bold text-slate-700 shadow-lg">
+                        ${index + 1}
+                    </div>
+                </div>
+                
+                <div class="p-5 flex-grow flex flex-col justify-between">
+                    <div class="flex items-start gap-3 mb-4">
+                        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+                            </svg>
+                        </div>
+                        <p class="text-slate-800 font-medium text-base leading-relaxed">"${scene.original_text || 'No text available'}"</p>
+                    </div>
+                    
+                    <div class="dev-prompt hidden mt-2 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div class="flex items-center gap-2 mb-2">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            <span class="text-xs font-semibold text-slate-700 uppercase tracking-wider">AI-Engineered Prompt</span>
+                        </div>
+                        <p class="text-xs text-slate-600 font-mono leading-relaxed">${scene.image_prompt || 'No prompt available'}</p>
+                    </div>
+                </div>
+            `;
+            
+            // Add retry handler
+            const retryBtn = panel.querySelector('.retry-btn');
+            if (retryBtn) {
+                retryBtn.addEventListener('click', () => retryPanel(index));
+            }
+            
+            grid.appendChild(panel);
+        }
+        
+        async function retryPanel(panelIndex) {
+            if (!currentGenerationData || !currentGenerationData.scenes[panelIndex]) return;
+            
+            const scene = currentGenerationData.scenes[panelIndex];
+            const btn = document.querySelector(`button[data-panel="${panelIndex}"]`);
+            if (btn) {
+                btn.textContent = 'Retrying...';
+                btn.disabled = true;
+            }
+            
+            try {
+                // Call backend to regenerate single panel
+                const response = await fetch('http://localhost:8000/api/regenerate-panel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: scene.image_prompt,
+                        index: panelIndex,
+                        seed: 1337
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.image_path) {
+                    scene.image_path = result.image_path;
+                    scene.image_generated = true;
+                    
+                    // Re-render the panel
+                    const panel = document.getElementById(`panel-${panelIndex}`);
+                    const grid = document.getElementById('storyboardGrid');
+                    if (panel) {
+                        panel.remove();
+                        renderPanel(scene, panelIndex, grid);
+                    }
+                    
+                    // Update gallery
+                    saveToGallery(currentGenerationData);
+                }
+            } catch (error) {
+                console.error('Retry failed:', error);
+                if (btn) {
+                    btn.textContent = 'Retry Failed';
+                    btn.disabled = false;
+                }
+            }
+        }
+        
+        function createPanelStatusCard(panelNum, total, archetype) {
+            return `
+                <div id="panel-status-${panelNum}" class="panel-status waiting rounded-xl p-3 border-2 border-slate-200">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-bold text-slate-700">Panel ${panelNum}</span>
+                        <span class="status-icon">
+                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-500 archetype-label capitalize">${archetype || 'Waiting...'}</p>
+                    <p class="status-text text-xs text-slate-600 mt-1">Waiting...</p>
+                </div>
+            `;
+        }
+        
+        function updatePanelStatus(panelNum, status, message) {
+            const card = document.getElementById(`panel-status-${panelNum}`);
+            if (!card) return;
+            
+            card.className = `panel-status ${status} rounded-xl p-3 border-2`;
+            
+            const statusText = card.querySelector('.status-text');
+            const statusIcon = card.querySelector('.status-icon');
+            
+            if (statusText) statusText.textContent = message;
+            
+            if (status === 'generating') {
+                if (statusIcon) statusIcon.innerHTML = '<svg class="w-4 h-4 text-amber-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+            } else if (status === 'complete') {
+                if (statusIcon) statusIcon.innerHTML = '<svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+            } else if (status === 'failed') {
+                if (statusIcon) statusIcon.innerHTML = '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+            }
+        }
+        
+        function animatePhases() {
+            const phases = document.querySelectorAll('.phase-indicator');
+            let currentPhase = 0;
+            
+            phases.forEach(p => p.classList.remove('active'));
+            
+            phaseInterval = setInterval(() => {
+                phases.forEach((p, i) => {
+                    if (i <= currentPhase) {
+                        p.classList.add('active');
+                    } else {
+                        p.classList.remove('active');
+                    }
+                });
+                currentPhase = (currentPhase + 1) % phases.length;
+            }, 1500);
+        }
+        
+        function stopPhaseAnimation() {
+            clearInterval(phaseInterval);
+            document.querySelectorAll('.phase-indicator').forEach(p => p.classList.add('active'));
+        }
+        
+        // Gallery Toggle
+        document.getElementById('galleryToggleBtn').addEventListener('click', () => {
+            const gallerySection = document.getElementById('gallerySection');
+            gallerySection.classList.toggle('hidden');
+            if (!gallerySection.classList.contains('hidden')) {
+                loadGallery();
+                gallerySection.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+        
+        // Clear Gallery
+        document.getElementById('clearGalleryBtn').addEventListener('click', () => {
+            if (confirm('Clear all history? This cannot be undone.')) {
+                localStorage.removeItem('storyboardGallery');
+                loadGallery();
+            }
+        });
+        
+        // Cancel Generation
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            document.getElementById('statusMessage').classList.add('hidden');
+            document.getElementById('generateBtn').disabled = false;
+            document.getElementById('generateBtn').innerHTML = `
+                <span class="relative z-10 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                    </svg>
+                    Generate Visual Story
+                </span>
+            `;
+        });
+
+        // Streaming Form Submission with EventSource
+        document.getElementById('pitchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const narrative = document.getElementById('narrativeInput').value;
+            const style = document.getElementById('styleSelect').value;
+            const btn = document.getElementById('generateBtn');
+            const statusDiv = document.getElementById('statusMessage');
+            const storyboardSection = document.getElementById('storyboardSection');
+            const grid = document.getElementById('storyboardGrid');
+            const globalSetting = document.getElementById('globalSetting');
+            const panelStatusGrid = document.getElementById('panelStatusGrid');
+            const progressFill = document.getElementById('progressFill');
+            const progressPercent = document.getElementById('progressPercent');
+            const statusText = document.getElementById('statusText');
+            const timeEstimate = document.getElementById('timeEstimate');
+
+            // Reset UI for loading state
+            btn.disabled = true;
+            btn.innerHTML = `
+                <span class="relative z-10 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Starting Generation...
+                </span>
+            `;
+            statusDiv.classList.remove('hidden');
+            storyboardSection.classList.add('hidden');
+            grid.innerHTML = '';
+            panelStatusGrid.innerHTML = '';
+            progressFill.style.width = '0%';
+            progressPercent.textContent = '0%';
+            statusText.textContent = 'Connecting...';
+            timeEstimate.textContent = '';
+            failedPanels = [];
+            
+            animatePhases();
+
+            // Close any existing EventSource
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // Use POST with fetch for streaming since EventSource doesn't support POST body
+            try {
+                const response = await fetch('http://localhost:8000/api/generate-stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ narrative, style })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n\n');
+                    buffer = lines.pop(); // Keep incomplete line in buffer
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                handleStreamEvent(data, panelStatusGrid, progressFill, progressPercent, statusText, timeEstimate, grid, storyboardSection, globalSetting, btn);
+                            } catch (e) {
+                                console.error('Failed to parse SSE data:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                stopPhaseAnimation();
+                console.error('Streaming error:', error);
+                statusText.textContent = 'Error: ' + error.message;
+                progressFill.style.width = '0%';
+                progressPercent.textContent = 'Error';
+                
+                // Show fallback to regular API
+                try {
+                    const response = await fetch('http://localhost:8000/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ narrative, style })
+                    });
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        handleStreamEvent({
+                            type: 'complete',
+                            status: 'success',
+                            scenes: result.data.scenes,
+                            total_scenes: result.data.total_scenes,
+                            successful_images: result.data.images_generated
+                        }, panelStatusGrid, progressFill, progressPercent, statusText, timeEstimate, grid, storyboardSection, globalSetting, btn);
+                    }
+                } catch (fallbackError) {
+                    statusDiv.innerHTML = `
+                        <div class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+                            <svg class="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span class="text-sm font-medium text-red-700">Error connecting to backend API.</span>
+                        </div>
+                    `;
+                }
+            }
+        });
+
+        function handleStreamEvent(data, panelStatusGrid, progressFill, progressPercent, statusText, timeEstimate, grid, storyboardSection, globalSetting, btn) {
+            switch (data.type) {
+                case 'phase':
+                    statusText.textContent = data.message;
+                    progressFill.style.width = data.progress + '%';
+                    progressPercent.textContent = data.progress + '%';
+                    break;
+
+                case 'time_estimate':
+                    timeEstimate.innerHTML = `<span class="inline-flex items-center gap-1 px-2 py-1 bg-indigo-100 text-indigo-700 rounded-md text-xs font-medium">${data.formatted}</span>`;
+                    break;
+
+                case 'scenes_ready':
+                    // Create panel status cards
+                    panelStatusGrid.innerHTML = '';
+                    data.scenes.forEach(scene => {
+                        panelStatusGrid.innerHTML += createPanelStatusCard(scene.panel, data.total_scenes, scene.archetype);
+                    });
+                    
+                    // Also create empty panel placeholders in grid
+                    grid.innerHTML = '';
+                    data.scenes.forEach((scene, index) => {
+                        const placeholder = document.createElement('div');
+                        placeholder.className = 'storyboard-card bg-white rounded-2xl shadow-lg shadow-slate-200/50 overflow-hidden border border-slate-100 flex flex-col opacity-50';
+                        placeholder.id = `panel-${index}`;
+                        placeholder.innerHTML = `
+                            <div class="relative pb-[75%] bg-slate-100 flex items-center justify-center">
+                                <div class="text-center">
+                                    <div class="w-16 h-16 rounded-2xl bg-slate-200 animate-pulse mx-auto mb-2"></div>
+                                    <p class="text-sm text-slate-400">Panel ${index + 1}</p>
+                                </div>
+                            </div>
+                            <div class="p-5">
+                                <p class="text-slate-600 text-sm">${scene.original_text}...</p>
+                            </div>
+                        `;
+                        grid.appendChild(placeholder);
+                    });
+                    break;
+
+                case 'panel_start':
+                    updatePanelStatus(data.panel, 'generating', 'Generating...');
+                    statusText.textContent = `Panel ${data.panel}: ${data.archetype} archetype`;
+                    break;
+
+                case 'panel_complete':
+                    updatePanelStatus(data.panel, 'complete', 'Complete ✓');
+                    
+                    // Render the panel immediately
+                    const panelIndex = data.panel - 1;
+                    const scene = {
+                        image_path: data.image_path,
+                        image_generated: true,
+                        scene_archetype: data.archetype,
+                        original_text: data.original_text,
+                        image_prompt: data.image_prompt
+                    };
+                    
+                    const oldPanel = document.getElementById(`panel-${panelIndex}`);
+                    if (oldPanel) {
+                        oldPanel.remove();
+                    }
+                    renderPanel(scene, panelIndex, grid);
+                    break;
+
+                case 'panel_failed':
+                    updatePanelStatus(data.panel, 'failed', 'Failed ✗');
+                    failedPanels.push(data.panel);
+                    break;
+
+                case 'waiting':
+                    statusText.textContent = data.message;
+                    if (data.next_panel) {
+                        updatePanelStatus(data.next_panel, 'waiting', 'Next...');
+                    }
+                    break;
+
+                case 'complete':
+                    stopPhaseAnimation();
+                    document.getElementById('statusMessage').classList.add('hidden');
+                    storyboardSection.classList.remove('hidden');
+                    storyboardSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    
+                    // Update global setting
+                    globalSetting.innerHTML = `
+                        <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+                        </svg>
+                        ${data.total_scenes} scenes • ${data.successful_images}/${data.total_scenes} images • Dynamic characters & archetype-matched lighting
+                    `;
+                    
+                    // Save to gallery
+                    currentGenerationData = {
+                        scenes: data.scenes,
+                        successful_images: data.successful_images
+                    };
+                    saveToGallery(currentGenerationData);
+                    
+                    // Re-enable button
+                    btn.disabled = false;
+                    btn.innerHTML = `
+                        <span class="relative z-10 flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                            </svg>
+                            Generate Visual Story
+                        </span>
+                    `;
+                    
+                    // Show retry options for failed panels
+                    if (failedPanels.length > 0) {
+                        const retrySection = document.createElement('div');
+                        retrySection.className = 'mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl';
+                        retrySection.innerHTML = `
+                            <p class="text-amber-800 font-medium mb-2">${failedPanels.length} panel(s) failed to generate</p>
+                            <button id="retryAllBtn" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors text-sm">
+                                Retry Failed Panels
+                            </button>
+                        `;
+                        storyboardSection.appendChild(retrySection);
+                        
+                        document.getElementById('retryAllBtn').addEventListener('click', () => {
+                            failedPanels.forEach(panelNum => retryPanel(panelNum - 1));
+                            retrySection.remove();
+                        });
+                    }
+                    break;
+
+                case 'error':
+                    stopPhaseAnimation();
+                    statusText.textContent = 'Error: ' + data.message;
+                    progressFill.style.width = '0%';
+                    progressPercent.textContent = 'Error';
+                    btn.disabled = false;
+                    break;
+            }
+        }
+
+        // Director's Cut Toggle Logic
+        document.getElementById('devToggle').addEventListener('click', () => {
+            const prompts = document.querySelectorAll('.dev-prompt');
+            const isHidden = prompts[0]?.classList.contains('hidden');
+            prompts.forEach(p => p.classList.toggle('hidden'));
+            
+            // Update button text
+            const btn = document.getElementById('devToggle');
+            btn.innerHTML = isHidden ? `
+                <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                </svg>
+                Hide Prompts
+            ` : `
+                <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                </svg>
+                Director's Cut
+            `;
+        });
+        
+        // Add animation keyframes
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeInUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            /* Streaming Progress Panel Styles */
+            .progress-panel {
+                background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                border: 1px solid #e2e8f0;
+            }
+            .panel-status {
+                transition: all 0.3s ease;
+            }
+            .panel-status.generating {
+                background: #fef3c7;
+                border-color: #f59e0b;
+            }
+            .panel-status.complete {
+                background: #d1fae5;
+                border-color: #10b981;
+            }
+            .panel-status.failed {
+                background: #fee2e2;
+                border-color: #ef4444;
+            }
+            .panel-status.waiting {
+                background: #f1f5f9;
+                border-color: #94a3b8;
+            }
+            
+            /* Time Estimate Styles */
+            .time-estimate {
+                background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+                color: white;
+                padding: 0.5rem 1rem;
+                border-radius: 9999px;
+                font-size: 0.875rem;
+                font-weight: 600;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            
+            /* Gallery Styles */
+            .gallery-item {
+                transition: all 0.3s ease;
+            }
+            .gallery-item:hover {
+                transform: scale(1.02);
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            }
+            
+            /* Cancel Button */
+            .cancel-btn {
+                background: #ef4444;
+                color: white;
+                transition: all 0.2s ease;
+            }
+            .cancel-btn:hover {
+                background: #dc2626;
+            }
+            
+            /* Retry Button */
+            .retry-btn {
+                background: #f59e0b;
+                color: white;
+                font-size: 0.75rem;
+                padding: 0.25rem 0.75rem;
+                border-radius: 0.375rem;
+                transition: all 0.2s ease;
+            }
+            .retry-btn:hover {
+                background: #d97706;
+            }
+            
+            /* Progress Bar */
+            .progress-bar {
+                height: 8px;
+                background: #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .progress-bar-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+                transition: width 0.5s ease;
+                border-radius: 4px;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
