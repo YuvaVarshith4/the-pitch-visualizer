@@ -1,22 +1,10 @@
-"""
-Enterprise Deal Tracker - Decoder GUI (Phase E Demo Tool)
-A standalone Tkinter application to extract and decrypt hidden watermarks from storyboard images.
-
-Usage:
-    python decoder_gui.py
-
-This tool allows you to:
-1. Select a storyboard image (PNG)
-2. Extract the hidden AES-128 encrypted payload
-3. Decrypt and display the tracking metadata
-"""
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 from stego_utils import extract_data
 
 
+# Extract & decrypt AES-128 watermark from image LSB
 def open_image_and_decrypt():
-    """Open file dialog, extract and decrypt hidden watermark."""
     filepath = filedialog.askopenfilename(
         title="Select Storyboard Image",
         filetypes=[
@@ -30,11 +18,9 @@ def open_image_and_decrypt():
         return
     
     try:
-        # Update status
         status_label.config(text="Extracting data...", fg="blue")
         root.update()
         
-        # Extract and decrypt the hidden payload
         decrypted_text = extract_data(filepath)
         
         if "Failed" in decrypted_text:
@@ -49,14 +35,11 @@ def open_image_and_decrypt():
             )
         else:
             status_label.config(text="Watermark extracted successfully!", fg="green")
-            
-            # Show result in a nice dialog
             result_window = tk.Toplevel(root)
             result_window.title("Extracted Watermark Data")
             result_window.geometry("500x300")
             result_window.transient(root)
             
-            # Header
             header = tk.Label(
                 result_window, 
                 text="🔒 ENTERPRISE ASSET TRACKING", 
@@ -65,7 +48,6 @@ def open_image_and_decrypt():
             )
             header.pack(pady=10)
             
-            # Scrolled text widget for the payload
             text_area = scrolledtext.ScrolledText(
                 result_window, 
                 wrap=tk.WORD, 
@@ -77,7 +59,6 @@ def open_image_and_decrypt():
             text_area.insert(tk.END, decrypted_text)
             text_area.config(state=tk.DISABLED)
             
-            # Close button
             close_btn = tk.Button(
                 result_window, 
                 text="Close", 
@@ -95,7 +76,6 @@ def open_image_and_decrypt():
 
 
 def create_gradient_bg(canvas, color1, color2):
-    """Create a gradient background on the canvas."""
     (r1, g1, b1) = canvas.winfo_rgb(color1)
     (r2, g2, b2) = canvas.winfo_rgb(color2)
     
@@ -112,20 +92,17 @@ def create_gradient_bg(canvas, color1, color2):
         canvas.create_line(0, i, 500, i, fill=color)
 
 
-# Setup the main UI
+# Tkinter GUI for watermark extraction tool
 root = tk.Tk()
 root.title("Enterprise Deal Tracker - Decoder")
 root.geometry("500x350")
 root.resizable(False, False)
 
-# Center the window
 root.eval('tk::PlaceWindow . center')
 
-# Main container with padding
 main_frame = tk.Frame(root, padx=30, pady=30)
 main_frame.pack(fill=tk.BOTH, expand=True)
 
-# Title
 label = tk.Label(
     main_frame, 
     text="🔒 PITCH VISUALIZER", 
@@ -141,11 +118,9 @@ subtitle = tk.Label(
 )
 subtitle.pack(pady=5)
 
-# Separator
 separator = tk.Frame(main_frame, height=2, bg="gray", bd=1, relief=tk.SUNKEN)
 separator.pack(fill=tk.X, pady=15)
 
-# Description
 desc_text = tk.Label(
     main_frame,
     text="This tool extracts AES-128 encrypted watermarks\n"
@@ -155,7 +130,6 @@ desc_text = tk.Label(
 )
 desc_text.pack(pady=10)
 
-# Main button
 btn = tk.Button(
     main_frame, 
     text="📁 SELECT IMAGE TO DECRYPT", 
@@ -169,7 +143,6 @@ btn = tk.Button(
 )
 btn.pack(pady=20)
 
-# Status label
 status_label = tk.Label(
     main_frame,
     text="Ready",
@@ -178,7 +151,6 @@ status_label = tk.Label(
 )
 status_label.pack(pady=10)
 
-# Footer
 footer = tk.Label(
     main_frame,
     text="AES-128 Encryption • LSB Steganography • Cryptographic Watermarking",
@@ -187,6 +159,5 @@ footer = tk.Label(
 )
 footer.pack(side=tk.BOTTOM, pady=10)
 
-# Run the application
 if __name__ == "__main__":
     root.mainloop()

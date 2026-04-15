@@ -1,5 +1,3 @@
-# Install requirements: pip install fastapi uvicorn pydantic python-dotenv presidio_analyzer presidio_anonymizer groq tenacity aiohttp
-
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -23,62 +21,47 @@ from datetime import datetime
 from dotenv import load_dotenv
 from typing import Optional, Dict, Any
 
-# Import Presidio modules for local, zero-trust sanitization
+# Phase B: Local PII detection & anonymization (Microsoft Presidio)
 from presidio_config import create_secops_engines
 
-# Phase C: LLM Integration for Continuity Engine
 from groq import AsyncGroq, APIError, RateLimitError
 
-# Phase D: Parallel Image Generation
 import aiohttp
 
-# Phase E: Cryptographic Steganography
+# Phase E: AES-128 + LSB steganography for watermarking
 from stego_utils import hide_data, extract_data
 
-# Load environment variables
 load_dotenv()
 
-# Configure structured logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("pitch_visualizer")
 
-# Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
-# Initialize the SecOps engines globally so they only load into memory once
-# Using lightweight en_core_web_sm model (~12MB) instead of en_core_web_lg (~400MB)
 analyzer, anonymizer = create_secops_engines()
 
-# Initialize Groq Client for Phase C Continuity Engine
-# Automatically picks up GROQ_API_KEY from environment variables
-groq_client = AsyncGroq(timeout=30.0)  # 30 second timeout for LLM calls
+# Phase C: Groq LLM client for prompt engineering (auto-loads GROQ_API_KEY)
+groq_client = AsyncGroq(timeout=30.0)
 
-# Configuration
 MAX_LLM_RETRIES = int(os.getenv("MAX_LLM_RETRIES", "3"))
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30.0"))
 CACHE_MAXSIZE = int(os.getenv("CACHE_MAXSIZE", "100"))
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
 MAX_REQUEST_BODY_SIZE = int(os.getenv("MAX_REQUEST_BODY_SIZE", "10000"))  # 10KB max
 
-# Semaphore for limiting concurrent LLM calls to prevent overwhelming Groq API
 llm_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-# Phase D: Image Generation Configuration
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
-# Using FLUX.1-schnell for fast, highly accurate prompt adherence
+# Phase D: Image generation via Hugging Face or Pollinations.ai
 HF_API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-# Alternative: Pollinations.ai (free, no API key required)
 USE_POLLINATIONS = os.getenv("USE_POLLINATIONS", "false").lower() == "true"
 
-# Semaphore for limiting concurrent image generation (Pollinations has strict rate limits)
-# Using 1 for sequential processing to avoid 429 errors
 MAX_CONCURRENT_IMAGES = int(os.getenv("MAX_CONCURRENT_IMAGES", "1"))
 image_semaphore = asyncio.Semaphore(MAX_CONCURRENT_IMAGES)
 
-# Ensure static directory exists for serving generated images
 os.makedirs("static", exist_ok=True)
 
 app = FastAPI(
@@ -87,11 +70,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Add rate limiter to app
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Enable CORS so our frontend can talk to the backend securely
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -100,10 +81,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add GZip compression for faster responses (compresses responses > 1000 bytes)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Request body size limiting middleware
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
     content_length = request.headers.get("content-length")
@@ -114,16 +93,13 @@ async def limit_request_size(request: Request, call_next):
         )
     return await call_next(request)
 
-# Mount static files directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Request logging middleware with structured logging
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
     start_time = time.time()
     
-    # Store request_id in request state for access in endpoints
     request.state.request_id = request_id
     
     logger.info(
@@ -211,9 +187,7 @@ async def health_check():
         "groq_api": False
     }
     
-    # Check Groq API connectivity
     try:
-        # Quick check if API key is configured
         api_key = os.getenv("GROQ_API_KEY")
         if api_key and len(api_key) > 10:
             dependencies["groq_api"] = True
@@ -274,8 +248,6 @@ async def api_info():
     }
 
 
-# --- PHASE C: THE CONTINUITY ENGINE ---
-
 @lru_cache(maxsize=CACHE_MAXSIZE)
 def _get_cache_key(text: str, style: str) -> str:
     """Generate cache key from text and style"""
@@ -291,7 +263,8 @@ def _get_cache_key(text: str, style: str) -> str:
 )
 async def _call_groq_with_retry(system_prompt: str, user_prompt: str, request_id: Optional[str] = None) -> dict:
     """Call Groq API with retry logic, exponential backoff, and concurrency limiting"""
-    async with llm_semaphore:  # Limit concurrent requests
+    # Limit concurrent LLM calls to prevent API rate limits
+    async with llm_semaphore:
         logger.info(
             "Calling Groq API",
             extra={"request_id": request_id, "model": "llama-3.3-70b-versatile"}
@@ -316,22 +289,18 @@ async def _call_groq_with_retry(system_prompt: str, user_prompt: str, request_id
         return json.loads(response.choices[0].message.content)
 
 
+# Phase C: LLM prompt engineering - 17 archetypes, dynamic casting, visual continuity
 async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: Optional[str] = None) -> dict:
     """
-    Use Groq LLM to create visually consistent prompts with a Global Character Sheet.
-    Features: Caching, retry logic, structured logging
-    
-    This solves the "Visual Consistency" problem by forcing the LLM to:
-    1. Create a universal "Global Character & Setting" description
-    2. Write image prompts that include this global setting in EVERY scene
-    3. Output strict JSON for reliable parsing
+    Uses Groq LLM to transform text into cinematic image prompts.
+    Key features:
+    - 17 scene archetypes (crisis, joy, struggle, etc.) with matched lighting
+    - Dynamic character casting (age, role, emotion maintained across scenes)
+    - Strict JSON output for reliable parsing
+    - Retry logic with exponential backoff
     """
     
-    # Check cache first
     cache_key = _get_cache_key(sanitized_text, visual_style)
-    # Note: LRU cache on async functions requires manual caching or functools.cache
-    # For simplicity, we'll use an in-memory cache dict
-    
     logger.info(
         "Starting prompt engineering",
         extra={
@@ -431,7 +400,6 @@ async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: O
     start_time = time.time()
     
     try:
-        # Call with retry logic and concurrency limiting
         result = await _call_groq_with_retry(system_prompt, user_prompt, request_id=request_id)
         
         duration = time.time() - start_time
@@ -458,8 +426,6 @@ async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: O
                 "error_type": type(e).__name__
             }
         )
-        
-        # Return a graceful fallback
         return {
             "global_setting": "A professional business setting",
             "scenes": [
@@ -472,8 +438,6 @@ async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: O
             "_error": str(e)
         }
 
-
-# --- PHASE D: PARALLEL IMAGE GENERATION ---
 
 @retry(
     retry=retry_if_exception_type((aiohttp.ClientError, asyncio.TimeoutError)),
@@ -494,27 +458,25 @@ async def generate_single_image(
     Limited by semaphore to avoid rate limiting.
     Includes retry logic with exponential backoff.
     """
-    async with image_semaphore:  # Limit concurrent requests
+    # Limit concurrent image API calls (Pollinations.ai is strict)
+    async with image_semaphore:
         filename = f"panel_{index+1}_{uuid.uuid4().hex[:8]}.png"
         filepath = os.path.join("static", filename)
         
         if USE_POLLINATIONS:
-            # Use Pollinations.ai (free, no API key required)
             import urllib.parse
-            encoded_prompt = urllib.parse.quote(prompt[:500])  # Limit prompt length and encode properly
+            encoded_prompt = urllib.parse.quote(prompt[:500])  
             url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&seed={fixed_seed}&nologo=true"
             
-            # Retry logic for rate limiting (429 errors)
             max_retries = 3
-            base_delay = 5  # Start with 5 second delay
+            base_delay = 5
             
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Panel {index+1}: Requesting image from Pollinations.ai (attempt {attempt + 1}/{max_retries})", extra={"request_id": request_id})
                     async with session.get(url, timeout=120) as response:
                         if response.status == 429:
-                            # Rate limited - wait and retry
-                            wait_time = base_delay * (2 ** attempt)  # Exponential backoff: 5, 10, 20 seconds
+                            wait_time = base_delay  
                             logger.warning(f"Panel {index+1}: Rate limited (429), waiting {wait_time}s before retry...", extra={"request_id": request_id})
                             await asyncio.sleep(wait_time)
                             continue
@@ -527,7 +489,7 @@ async def generate_single_image(
                         with open(filepath, "wb") as f:
                             f.write(image_bytes)
                         
-                        # --- PHASE E: CRYPTOGRAPHIC WATERMARK ---
+                        # Phase E: Embed AES-128 encrypted watermark in LSB of Red channel
                         tracking_payload = f"Panel:{index+1}|Req:{request_id}|Time:{datetime.now().isoformat()}|Seed:{fixed_seed}"
                         hide_data(filepath, tracking_payload)
                         logger.info(f"Panel {index+1}: Encrypted watermark embedded", extra={"request_id": request_id})
@@ -542,16 +504,14 @@ async def generate_single_image(
                         await asyncio.sleep(wait_time)
                         continue
                     else:
-                        # Final attempt failed
                         import traceback
                         error_msg = f"{str(e)}\n{traceback.format_exc()}"
                         logger.error(f"Panel {index+1}: Pollinations generation failed after {max_retries} attempts: {str(e)}", extra={"request_id": request_id, "error": error_msg})
                         print(f"ERROR Panel {index+1}: {error_msg}")
                         return None
             
-            return None  # All retries exhausted
+            return None
         else:
-            # Use Hugging Face Inference API
             if not HF_API_TOKEN:
                 logger.error("HF_API_TOKEN not set", extra={"request_id": request_id})
                 return None
@@ -564,6 +524,7 @@ async def generate_single_image(
             
             try:
                 logger.info(f"Panel {index+1}: Requesting image from Hugging Face", extra={"request_id": request_id})
+                # HF watermark added below (same LSB steganography as Pollinations)
                 async with session.post(HF_API_URL, headers=headers, json=payload, timeout=120) as response:
                     if response.status != 200:
                         error_text = await response.text()
@@ -574,7 +535,6 @@ async def generate_single_image(
                     with open(filepath, "wb") as f:
                         f.write(image_bytes)
                     
-                    # --- PHASE E: CRYPTOGRAPHIC WATERMARK ---
                     tracking_payload = f"Panel:{index+1}|Req:{request_id}|Time:{datetime.now().isoformat()}|Seed:{fixed_seed}"
                     hide_data(filepath, tracking_payload)
                     logger.info(f"Panel {index+1}: Encrypted watermark embedded", extra={"request_id": request_id})
@@ -586,6 +546,7 @@ async def generate_single_image(
                 return None
 
 
+# Orchestrate image generation with rate limiting + watermarking
 async def execute_parallel_generation(
     scenes: list, 
     fixed_seed: int = 1337,
@@ -598,18 +559,15 @@ async def execute_parallel_generation(
     logger.info(f"Starting parallel generation for {len(scenes)} scenes", extra={"request_id": request_id, "fixed_seed": fixed_seed})
     
     async with aiohttp.ClientSession() as session:
-        # Process sequentially with delays to avoid rate limits
         image_paths = []
         for index, scene in enumerate(scenes):
             prompt = scene["image_prompt"]
             path = await generate_single_image(session, prompt, index, fixed_seed, request_id)
             image_paths.append(path)
-            # Add delay between images to avoid rate limiting (Pollinations.ai is strict)
             if index < len(scenes) - 1:
                 logger.info(f"Waiting 10s before next image to respect rate limits...", extra={"request_id": request_id})
                 await asyncio.sleep(10)
         
-        # Merge image paths back into scenes
         for i, path in enumerate(image_paths):
             scenes[i]["image_path"] = path
             scenes[i]["image_generated"] = path is not None
@@ -623,20 +581,17 @@ async def execute_parallel_generation(
         return scenes
 
 
+# Main endpoint: Orchestrates 6-phase pipeline (A→F)
 @app.post("/api/generate")
-@limiter.limit("10/minute")  # Rate limit: 10 requests per minute
+@limiter.limit("10/minute")
 async def generate_storyboard(request: Request, payload: PitchPayload):
     """
-    Ingest pitch narrative and initiate storyboard generation pipeline.
-    
-    - Phase A: Validates input (3-7 sentences, proper style)
-    - Phase B: Zero-Trust SecOps sanitization using Microsoft Presidio
-    - Phase C: Groq LLM-powered continuity engine with Global Character Sheet
-    - Logs request with unique ID
+    6-Phase Pipeline:
+    A: Ingestion → B: SecOps Sanitization → C: LLM Archetype Engine →
+    D: Parallel Image Generation → E: Steganographic Watermark → F: Assembly
     """
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
-    
-    # Validate sentence count
+    # Phase A: Input validation (3-7 sentences required)
     sentences = [s.strip() for s in payload.narrative.replace('!', '.').replace('?', '.').split('.') if s.strip()]
     
     print(f"\n{'='*60}")
@@ -647,7 +602,7 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
     print(f"Sentence Count: {len(sentences)}")
     print(f"Character Count: {len(payload.narrative)}")
     
-    # Phase B: Zero-Trust SecOps Sanitization
+    # Phase B: Zero-Trust SecOps - Mask PII before external API calls
     print(f"\n--- PHASE B: SECOPS SANITIZATION ---")
     print(f"RAW NARRATIVE: {payload.narrative}")
     
@@ -671,11 +626,11 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
         for entity in analyzer_results:
             print(f"  - {entity.entity_type}: '{payload.narrative[entity.start:entity.end]}' → <{entity.entity_type}>")
     
-    # Phase C: Archetype Engine - LLM Prompt Engineering
+    # Phase C: LLM archetype classification + cinematic prompt engineering
     print(f"\n--- PHASE C: ARCHETYPE ENGINE (GROQ LLM) ---")
     storyboard_data = await engineer_prompts(sanitized_text, payload.style, request_id=request_id)
     
-    # Check if fallback was used
+    # Graceful fallback if LLM fails
     if storyboard_data.get("_fallback"):
         logger.warning(
             "Using fallback prompts due to LLM failure",
@@ -691,14 +646,11 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
         print(f"  Original: {scene.get('original_text', 'N/A')[:60]}...")
         print(f"  Prompt: {scene.get('image_prompt', 'N/A')[:80]}...")
     
-    # Phase D: Parallel Image Generation
+    # Phase D+E: Generate images with fixed seed (1337) for visual consistency + embed watermarks
     print(f"\n--- PHASE D: PARALLEL IMAGE GENERATION ---")
     scenes = storyboard_data.get('scenes', [])
-    
-    # Use fixed seed 1337 for visual continuity across all panels
     completed_scenes = await execute_parallel_generation(scenes, fixed_seed=1337, request_id=request_id)
     
-    # Count successful generations
     successful_images = sum(1 for scene in completed_scenes if scene.get('image_generated'))
     
     print(f"\nImages Generated: {successful_images}/{len(completed_scenes)}")
@@ -736,11 +688,13 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
     return response_data
 
 
+# Retry endpoint for failed image panels
 @app.post("/api/regenerate-panel")
 @limiter.limit("30/minute")
 async def regenerate_panel(request: Request, payload: dict):
     """
-    Regenerate a single panel image. Used for retrying failed panels.
+    Regenerate a single panel image with new seed if needed.
+    Used for retrying failed panels via the UI.
     """
     request_id = str(uuid.uuid4())[:8]
     
