@@ -4,8 +4,9 @@ services:
     env: python
     plan: starter
     buildCommand: "pip install -r requirements.txt && python -m spacy download en_core_web_sm"
-    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1"
     healthCheckPath: /health
+    healthCheckTimeout: 120
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -16,15 +17,19 @@ services:
       - key: USE_POLLINATIONS
         value: "true"
       - key: ENCRYPTION_KEY
-        generateValue: true
+        value: "16ByteSecretKey!"
       - key: ENCRYPTION_IV
-        generateValue: true
+        value: "16ByteInitVector"
+      - key: PORT
+        value: "10000"
       - key: MAX_CONCURRENT_REQUESTS
-        value: "3"
+        value: "1"
+      - key: MAX_CONCURRENT_IMAGES
+        value: "1"
       - key: LLM_TIMEOUT
         value: "30.0"
       - key: CACHE_MAXSIZE
-        value: "50"
+        value: "25"
 
 disk:
   name: pitch-visualizer-disk
