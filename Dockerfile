@@ -21,8 +21,11 @@ COPY . .
 # Create static directory
 RUN mkdir -p static
 
-# Expose port (Railway provides PORT env var, default to 8000)
+# Expose port (Railway provides PORT env var)
 EXPOSE 8000
 
-# Run the application with shell form to allow env var expansion
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Set default PORT if not provided
+ENV PORT=8000
+
+# Run the application
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
