@@ -16,9 +16,11 @@ services:
       - key: USE_POLLINATIONS
         value: "true"
       - key: ENCRYPTION_KEY
-        generateValue: true
+        value: "16ByteSecretKey!"
       - key: ENCRYPTION_IV
-        generateValue: true
+        value: "16ByteInitVector"
+      - key: PORT
+        value: "10000"
       - key: MAX_CONCURRENT_REQUESTS
         value: "3"
       - key: LLM_TIMEOUT
