@@ -1,0 +1,35 @@
+name: pitch-visualizer
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: your-username/pitch-visualizer
+    branch: main
+  run_command: uvicorn main:app --host 0.0.0.0 --port $PORT
+  environment_slug: python-3.11
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  envs:
+  - key: ENVIRONMENT
+    value: production
+  - key: GROQ_API_KEY
+    type: SECRET
+  - key: HF_API_TOKEN
+    type: SECRET
+  - key: USE_POLLINATIONS
+    value: "true"
+  - key: ENCRYPTION_KEY
+    type: SECRET
+  - key: ENCRYPTION_IV
+    type: SECRET
+  - key: MAX_CONCURRENT_REQUESTS
+    value: "3"
+  - key: LLM_TIMEOUT
+    value: "30.0"
+  - key: CACHE_MAXSIZE
+    value: "50"
+  http_port: 8000
+  routes:
+  - path: /
+databases: []
+workers: []
