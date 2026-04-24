@@ -688,13 +688,11 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
     return response_data
 
 
-# Retry endpoint for failed image panels
 @app.post("/api/regenerate-panel")
 @limiter.limit("30/minute")
 async def regenerate_panel(request: Request, payload: dict):
     """
-    Regenerate a single panel image with new seed if needed.
-    Used for retrying failed panels via the UI.
+    Regenerate a single panel image.
     """
     request_id = str(uuid.uuid4())[:8]
     
