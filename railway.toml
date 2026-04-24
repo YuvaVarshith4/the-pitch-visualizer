@@ -4,9 +4,10 @@ buildCommand = "pip install -r requirements.txt && python -m spacy download en_c
 
 [deploy]
 healthcheckPath = "/health"
-healthcheckTimeout = 300
+healthcheckTimeout = 600
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 3
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
 
 [[services]]
 name = "pitch-visualizer"
