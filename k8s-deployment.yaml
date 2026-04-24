@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pitch-visualizer
+  labels:
+    app: pitch-visualizer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pitch-visualizer
+  template:
+    metadata:
+      labels:
+        app: pitch-visualizer
+    spec:
+      containers:
+      - name: pitch-visualizer
+        image: pitch-visualizer:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pitch-visualizer-secrets
+              key: groq-api-key
+        - name: HF_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: pitch-visualizer-secrets
+              key: hf-api-token
+        - name: USE_POLLINATIONS
+          value: "true"
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pitch-visualizer-secrets
+              key: encryption-key
+        - name: ENCRYPTION_IV
+          valueFrom:
+            secretKeyRef:
+              name: pitch-visualizer-secrets
+              key: encryption-iv
+        - name: MAX_CONCURRENT_REQUESTS
+          value: "5"
+        - name: LLM_TIMEOUT
+          value: "30.0"
+        - name: CACHE_MAXSIZE
+          value: "100"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: static-storage
+          mountPath: /app/static
+      volumes:
+      - name: static-storage
+        persistentVolumeClaim:
+          claimName: pitch-visualizer-static-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pitch-visualizer-service
+spec:
+  selector:
+    app: pitch-visualizer
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pitch-visualizer-static-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pitch-visualizer-secrets
+type: Opaque
+data:
+  # Base64 encoded values - replace with your actual encoded secrets
+  groq-api-key: <BASE64_ENCODED_GROQ_API_KEY>
+  hf-api-token: <BASE64_ENCODED_HF_API_TOKEN>
+  encryption-key: <BASE64_ENCODED_ENCRYPTION_KEY>
+  encryption-iv: <BASE64_ENCODED_ENCRYPTION_IV>
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pitch-visualizer-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rate-limit: "10"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - your-domain.com
+    secretName: pitch-visualizer-tls
+  rules:
+  - host: your-domain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: pitch-visualizer-service
+            port:
+              number: 80

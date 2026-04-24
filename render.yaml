@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: pitch-visualizer
+    env: python
+    plan: starter
+    buildCommand: "pip install -r requirements.txt && python -m spacy download en_core_web_sm"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: GROQ_API_KEY
+        sync: false
+      - key: HF_API_TOKEN
+        sync: false
+      - key: USE_POLLINATIONS
+        value: "true"
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: ENCRYPTION_IV
+        generateValue: true
+      - key: MAX_CONCURRENT_REQUESTS
+        value: "3"
+      - key: LLM_TIMEOUT
+        value: "30.0"
+      - key: CACHE_MAXSIZE
+        value: "50"
+
+disk:
+  name: pitch-visualizer-disk
+  mountPath: /app/static
+  sizeGB: 10
