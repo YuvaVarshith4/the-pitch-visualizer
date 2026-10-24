@@ -28,6 +28,9 @@ env/
 # Environment Variables
 .env
 
+# SSL certificates
+*.pem
+
 # IDE
 .vscode/
 .idea/
@@ -48,3 +51,4 @@ static/*.jpeg
 # OS
 .DS_Store
 Thumbs.db
+.vercel

@@ -68,3 +68,8 @@ ssl/
 *.pem
 *.key
 *.crt
+
+# Vercel
+.vercel/
+api/
+vercel.json

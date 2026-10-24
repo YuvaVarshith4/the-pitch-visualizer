@@ -22,14 +22,20 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Any
 
 # Phase B: Local PII detection & anonymization (Microsoft Presidio)
-from presidio_config import create_secops_engines
+try:
+    from presidio_config import create_secops_engines
+    PRESIDIO_AVAILABLE = True
+except ImportError:
+    PRESIDIO_AVAILABLE = False
 
 from groq import AsyncGroq, APIError, RateLimitError
 
 import aiohttp
+import base64
+import urllib.parse
 
 # Phase E: AES-128 + LSB steganography for watermarking
-from stego_utils import hide_data, extract_data
+from stego_utils import hide_data, hide_data_bytes, extract_data
 
 load_dotenv()
 
@@ -41,9 +47,13 @@ logger = logging.getLogger("pitch_visualizer")
 
 limiter = Limiter(key_func=get_remote_address)
 
-analyzer, anonymizer = create_secops_engines()
+if PRESIDIO_AVAILABLE:
+    analyzer, anonymizer = create_secops_engines()
+else:
+    analyzer, anonymizer = None, None
+    logger.warning("Presidio not available — PII anonymization disabled")
 
-# Phase C: Groq LLM client for prompt engineering (auto-loads GROQ_API_KEY)
+# Phase C: Groq LLM client (prompt eng.)
 groq_client = AsyncGroq(timeout=30.0)
 
 MAX_LLM_RETRIES = int(os.getenv("MAX_LLM_RETRIES", "3"))
@@ -55,14 +65,18 @@ MAX_REQUEST_BODY_SIZE = int(os.getenv("MAX_REQUEST_BODY_SIZE", "10000"))  # 10KB
 llm_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
-# Phase D: Image generation via Hugging Face or Pollinations.ai
+STABILITY_API_KEY = os.environ.get("STABILITY_API_KEY")
+# Phase D: Image generation via Hugging Face, Stability AI, or Pollinations.ai
 HF_API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+STABILITY_API_URL = "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image"
 USE_POLLINATIONS = os.getenv("USE_POLLINATIONS", "false").lower() == "true"
+USE_STABILITY = os.getenv("USE_STABILITY", "false").lower() == "true"
 
 MAX_CONCURRENT_IMAGES = int(os.getenv("MAX_CONCURRENT_IMAGES", "1"))
 image_semaphore = asyncio.Semaphore(MAX_CONCURRENT_IMAGES)
 
-os.makedirs("static", exist_ok=True)
+STATIC_DIR = "/tmp/static" if os.getenv("VERCEL") else "static"
+os.makedirs(STATIC_DIR, exist_ok=True)
 
 app = FastAPI(
     title="Pitch Visualizer Enterprise API",
@@ -93,7 +107,7 @@ async def limit_request_size(request: Request, call_next):
         )
     return await call_next(request)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -145,7 +159,8 @@ async def log_requests(request: Request, call_next):
 class PitchPayload(BaseModel):
     narrative: str
     style: str
-    
+    num_images: int = 3
+
     @validator('narrative')
     def validate_narrative_length(cls, v):
         sentences = [s.strip() for s in v.replace('!', '.').replace('?', '.').split('.') if s.strip()]
@@ -158,17 +173,23 @@ class PitchPayload(BaseModel):
         if len(v) > 2000:
             raise ValueError('Narrative is too long. Please limit to 2000 characters')
         return v
-    
+
     @validator('style')
     def validate_style(cls, v):
         allowed_styles = [
             "Cinematic Photorealism, 8k, highly detailed",
-            "Flat corporate vector art, clean lines, minimalist", 
+            "Flat corporate vector art, clean lines, minimalist",
             "Cyberpunk, neon lighting, dark background",
             "Soft watercolor, bright and optimistic"
         ]
         if v not in allowed_styles:
             raise ValueError(f'Invalid style. Allowed styles: {allowed_styles}')
+        return v
+
+    @validator('num_images')
+    def validate_num_images(cls, v):
+        if v < 1 or v > 7:
+            raise ValueError('Number of images must be between 1 and 7')
         return v
 
 
@@ -183,7 +204,7 @@ async def serve_frontend():
 async def health_check():
     """Health check endpoint with dependency status"""
     dependencies = {
-        "presidio": True,  # Already initialized at startup
+        "presidio": PRESIDIO_AVAILABLE,
         "groq_api": False
     }
     
@@ -204,7 +225,7 @@ async def health_check():
         "dependencies": dependencies,
         "features_ready": {
             "phase_a_ingestion": True,
-            "phase_b_secops": True,
+            "phase_b_secops": PRESIDIO_AVAILABLE,
             "phase_c_continuity": dependencies["groq_api"]
         }
     }
@@ -267,7 +288,7 @@ async def _call_groq_with_retry(system_prompt: str, user_prompt: str, request_id
     async with llm_semaphore:
         logger.info(
             "Calling Groq API",
-            extra={"request_id": request_id, "model": "llama-3.3-70b-versatile"}
+            extra={"request_id": request_id, "model": "qwen/qwen3.8-27b"}
         )
         
         response = await groq_client.chat.completions.create(
@@ -275,7 +296,7 @@ async def _call_groq_with_retry(system_prompt: str, user_prompt: str, request_id
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="llama-3.3-70b-versatile",
+            model="qwen/qwen3.8-27b",
             temperature=0.2,
             response_format={"type": "json_object"},
             timeout=LLM_TIMEOUT
@@ -290,7 +311,7 @@ async def _call_groq_with_retry(system_prompt: str, user_prompt: str, request_id
 
 
 # Phase C: LLM prompt engineering - 17 archetypes, dynamic casting, visual continuity
-async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: Optional[str] = None) -> dict:
+async def engineer_prompts(sanitized_text: str, visual_style: str, num_images: int = 3, request_id: Optional[str] = None) -> dict:
     """
     Uses Groq LLM to transform text into cinematic image prompts.
     Key features:
@@ -312,13 +333,22 @@ async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: O
     )
     
     system_prompt = f"""You are an expert AI Image Prompt Engineer and Storyboard Director.
-    Your job is to take ANY narrative and break it into 3 to 5 cinematic visual scenes
+    Your job is to take ANY narrative and break it into EXACTLY {num_images} cinematic visual scenes
     that communicate the EXACT situation described.
+
+    CRITICAL RULES:
+    - You MUST produce EXACTLY {num_images} scenes, each showing a DIFFERENT visual moment.
+    - NEVER repeat the same original_text across scenes. If there are fewer sentences than
+      {num_images}, split longer sentences into distinct visual beats (e.g. "She worked long shifts
+      and came home exhausted" → scene 1: working at the hospital, scene 2: arriving home exhausted).
+    - Each scene MUST have a UNIQUE image_prompt with different setting, composition, and camera angle.
+    - The image_prompt must be highly specific and descriptive — include the exact setting, person's
+      appearance, clothing, pose, expression, objects in frame, and lighting. Generic prompts are not allowed.
 
     CRITICAL INSTRUCTIONS:
 
     STEP 1 — CLASSIFY EACH SCENE ARCHETYPE:
-    Identify which archetype fits the sentence:
+    Identify which archetype fits the scene moment:
 
     PROFESSIONAL:
     - crisis       → threat, financial loss, emergency
@@ -382,14 +412,17 @@ async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: O
     [camera angle],
     highly detailed, professional quality, 8k resolution"
 
-    Output ONLY valid JSON:
+    IMPORTANT: You MUST generate EXACTLY {num_images} scenes. No more, no less.
+    Each scene must depict a DIFFERENT moment — no two scenes should look the same.
+
+    Output ONLY valid JSON (no thinking, no explanation, no markdown):
     {{
       "global_setting": "Dynamic - varies per scene",
       "scenes": [
         {{
-          "original_text": "the exact sentence",
-          "scene_archetype": "crisis|conflict|struggle|routine|connection|...",
-          "image_prompt": "Visual Style: {visual_style}, [person + details], ..."
+          "original_text": "the specific moment this scene depicts (must be unique per scene)",
+          "scene_archetype": "crisis|conflict|struggle|routine|connection|joy|reflection|...",
+          "image_prompt": "Visual Style: {visual_style}, [specific person with age, role, clothing, expression, pose], [specific setting with details], [focal action], [visible objects], [archetype-matched lighting], [camera angle], highly detailed, professional quality, 8k resolution"
         }}
       ]
     }}
@@ -446,57 +479,95 @@ async def engineer_prompts(sanitized_text: str, visual_style: str, request_id: O
     reraise=True
 )
 async def generate_single_image(
-    session: aiohttp.ClientSession, 
-    prompt: str, 
-    index: int, 
+    session: aiohttp.ClientSession,
+    prompt: str,
+    index: int,
     fixed_seed: int = 1337,
     request_id: Optional[str] = None
 ) -> Optional[str]:
     """
-    Generate a single image using Hugging Face Inference API or Pollinations.ai.
-    Uses fixed seed for visual continuity across all panels.
-    Limited by semaphore to avoid rate limiting.
-    Includes retry logic with exponential backoff.
+    Generate a single image and return a URL or base64 data URI.
+    - Pollinations: returns the CDN URL directly (no download, no storage).
+    - Stability AI / HuggingFace: downloads bytes, watermarks in-memory,
+      returns a base64 data URI.
     """
-    # Limit concurrent image API calls (Pollinations.ai is strict)
     async with image_semaphore:
-        filename = f"panel_{index+1}_{uuid.uuid4().hex[:8]}.png"
-        filepath = os.path.join("static", filename)
-        
-        if USE_POLLINATIONS:
-            import urllib.parse
-            encoded_prompt = urllib.parse.quote(prompt[:500])  
+        tracking_payload = f"Panel:{index+1}|Req:{request_id}|Time:{datetime.now().isoformat()}|Seed:{fixed_seed}"
+
+        if USE_STABILITY and STABILITY_API_KEY:
+            headers = {
+                "Authorization": f"Bearer {STABILITY_API_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+            payload = {
+                "text_prompts": [{"text": prompt}],
+                "cfg_scale": 7,
+                "height": 1024,
+                "width": 1024,
+                "steps": 30,
+                "samples": 1,
+                "seed": fixed_seed
+            }
+
+            try:
+                logger.info(f"Panel {index+1}: Requesting image from Stability AI", extra={"request_id": request_id})
+                async with session.post(STABILITY_API_URL, headers=headers, json=payload, timeout=120) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Panel {index+1}: Stability AI error {response.status}", extra={"request_id": request_id, "error": error_text[:100]})
+                        return None
+
+                    response_data = await response.json()
+                    if "artifacts" in response_data and len(response_data["artifacts"]) > 0:
+                        image_bytes = base64.b64decode(response_data["artifacts"][0]["base64"])
+                        watermarked = hide_data_bytes(image_bytes, tracking_payload)
+                        b64 = base64.b64encode(watermarked).decode()
+                        logger.info(f"Panel {index+1}: Stability AI image ready (base64)", extra={"request_id": request_id})
+                        return f"data:image/png;base64,{b64}"
+                    else:
+                        logger.error(f"Panel {index+1}: Stability AI response missing artifacts", extra={"request_id": request_id})
+                        return None
+
+            except Exception as e:
+                logger.error(f"Panel {index+1}: Stability AI generation failed: {str(e)}", extra={"request_id": request_id})
+                return None
+
+        elif USE_POLLINATIONS:
+            encoded_prompt = urllib.parse.quote(prompt[:500])
             url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&seed={fixed_seed}&nologo=true"
-            
-            max_retries = 3
-            base_delay = 5
-            
+
+            max_retries = 5
+            base_delay = 15
+
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Panel {index+1}: Requesting image from Pollinations.ai (attempt {attempt + 1}/{max_retries})", extra={"request_id": request_id})
-                    async with session.get(url, timeout=120) as response:
-                        if response.status == 429:
-                            wait_time = base_delay  
-                            logger.warning(f"Panel {index+1}: Rate limited (429), waiting {wait_time}s before retry...", extra={"request_id": request_id})
+                    async with session.get(url, timeout=180, allow_redirects=True) as response:
+                        if response.status in (429, 402, 503, 500):
+                            wait_time = base_delay * (2 ** attempt)
+                            logger.warning(f"Panel {index+1}: Pollinations {response.status}, waiting {wait_time}s before retry (attempt {attempt+1}/{max_retries})...", extra={"request_id": request_id})
                             await asyncio.sleep(wait_time)
                             continue
-                        
+
                         if response.status != 200:
                             logger.error(f"Panel {index+1}: Pollinations error {response.status}", extra={"request_id": request_id})
                             return None
-                        
+
+                        content_type = response.headers.get('content-type', '')
                         image_bytes = await response.read()
-                        with open(filepath, "wb") as f:
-                            f.write(image_bytes)
-                        
-                        # Phase E: Embed AES-128 encrypted watermark in LSB of Red channel
-                        tracking_payload = f"Panel:{index+1}|Req:{request_id}|Time:{datetime.now().isoformat()}|Seed:{fixed_seed}"
-                        hide_data(filepath, tracking_payload)
-                        logger.info(f"Panel {index+1}: Encrypted watermark embedded", extra={"request_id": request_id})
-                        
-                        logger.info(f"Panel {index+1}: Image saved from Pollinations.ai", extra={"request_id": request_id, "image_file": filename})
-                        return f"/static/{filename}"
-                        
+
+                        if 'image' not in content_type or len(image_bytes) < 5000:
+                            logger.warning(f"Panel {index+1}: Pollinations returned non-image (type={content_type}, size={len(image_bytes)}), retrying...", extra={"request_id": request_id})
+                            await asyncio.sleep(base_delay)
+                            continue
+
+                        watermarked = hide_data_bytes(image_bytes, tracking_payload)
+                        img_format = 'jpeg' if 'jpeg' in content_type or 'jpg' in content_type else 'png'
+                        b64 = base64.b64encode(watermarked).decode()
+                        logger.info(f"Panel {index+1}: Pollinations.ai image ready (base64, {len(image_bytes)} bytes)", extra={"request_id": request_id})
+                        return f"data:image/{img_format};base64,{b64}"
+
                 except Exception as e:
                     if attempt < max_retries - 1:
                         wait_time = base_delay * (2 ** attempt)
@@ -504,43 +575,34 @@ async def generate_single_image(
                         await asyncio.sleep(wait_time)
                         continue
                     else:
-                        import traceback
-                        error_msg = f"{str(e)}\n{traceback.format_exc()}"
-                        logger.error(f"Panel {index+1}: Pollinations generation failed after {max_retries} attempts: {str(e)}", extra={"request_id": request_id, "error": error_msg})
-                        print(f"ERROR Panel {index+1}: {error_msg}")
+                        logger.error(f"Panel {index+1}: Pollinations generation failed after {max_retries} attempts: {str(e)}", extra={"request_id": request_id})
                         return None
-            
+
             return None
         else:
             if not HF_API_TOKEN:
                 logger.error("HF_API_TOKEN not set", extra={"request_id": request_id})
                 return None
-            
+
             headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
             payload = {
                 "inputs": prompt,
                 "parameters": {"seed": fixed_seed}
             }
-            
+
             try:
                 logger.info(f"Panel {index+1}: Requesting image from Hugging Face", extra={"request_id": request_id})
-                # HF watermark added below (same LSB steganography as Pollinations)
                 async with session.post(HF_API_URL, headers=headers, json=payload, timeout=120) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"Panel {index+1}: HF API error {response.status}", extra={"request_id": request_id, "error": error_text[:100]})
                         return None
-                    
+
                     image_bytes = await response.read()
-                    with open(filepath, "wb") as f:
-                        f.write(image_bytes)
-                    
-                    tracking_payload = f"Panel:{index+1}|Req:{request_id}|Time:{datetime.now().isoformat()}|Seed:{fixed_seed}"
-                    hide_data(filepath, tracking_payload)
-                    logger.info(f"Panel {index+1}: Encrypted watermark embedded", extra={"request_id": request_id})
-                    
-                    logger.info(f"Panel {index+1}: Image saved from Hugging Face", extra={"request_id": request_id, "image_file": filename})
-                    return f"/static/{filename}"
+                    watermarked = hide_data_bytes(image_bytes, tracking_payload)
+                    b64 = base64.b64encode(watermarked).decode()
+                    logger.info(f"Panel {index+1}: HuggingFace image ready (base64)", extra={"request_id": request_id})
+                    return f"data:image/png;base64,{b64}"
             except Exception as e:
                 logger.error(f"Panel {index+1}: HF generation failed", extra={"request_id": request_id, "error": str(e)})
                 return None
@@ -565,8 +627,8 @@ async def execute_parallel_generation(
             path = await generate_single_image(session, prompt, index, fixed_seed, request_id)
             image_paths.append(path)
             if index < len(scenes) - 1:
-                logger.info(f"Waiting 10s before next image to respect rate limits...", extra={"request_id": request_id})
-                await asyncio.sleep(10)
+                logger.info(f"Waiting 15s before next image to respect rate limits...", extra={"request_id": request_id})
+                await asyncio.sleep(15)
         
         for i, path in enumerate(image_paths):
             scenes[i]["image_path"] = path
@@ -591,7 +653,7 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
     D: Parallel Image Generation → E: Steganographic Watermark → F: Assembly
     """
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
-    # Phase A: Input validation (3-7 sentences required)
+    # Phase A: Input validation
     sentences = [s.strip() for s in payload.narrative.replace('!', '.').replace('?', '.').split('.') if s.strip()]
     
     print(f"\n{'='*60}")
@@ -602,34 +664,39 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
     print(f"Sentence Count: {len(sentences)}")
     print(f"Character Count: {len(payload.narrative)}")
     
-    # Phase B: Zero-Trust SecOps - Mask PII before external API calls
+    # Phase B: PII before external API calls
     print(f"\n--- PHASE B: SECOPS SANITIZATION ---")
     print(f"RAW NARRATIVE: {payload.narrative}")
-    
-    analyzer_results = analyzer.analyze(
-        text=payload.narrative, 
-        entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
-        language="en"
-    )
-    
-    anonymized_result = anonymizer.anonymize(
-        text=payload.narrative,
-        analyzer_results=analyzer_results
-    )
-    
-    sanitized_text = anonymized_result.text
-    entities_detected = len(analyzer_results)
-    
-    print(f"SANITIZED: {sanitized_text}")
-    print(f"Entities Masked: {entities_detected}")
-    if analyzer_results:
-        for entity in analyzer_results:
-            print(f"  - {entity.entity_type}: '{payload.narrative[entity.start:entity.end]}' → <{entity.entity_type}>")
+
+    if PRESIDIO_AVAILABLE and analyzer and anonymizer:
+        analyzer_results = analyzer.analyze(
+            text=payload.narrative,
+            entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
+            language="en"
+        )
+
+        anonymized_result = anonymizer.anonymize(
+            text=payload.narrative,
+            analyzer_results=analyzer_results
+        )
+
+        sanitized_text = anonymized_result.text
+        entities_detected = len(analyzer_results)
+
+        print(f"SANITIZED: {sanitized_text}")
+        print(f"Entities Masked: {entities_detected}")
+        if analyzer_results:
+            for entity in analyzer_results:
+                print(f"  - {entity.entity_type}: '{payload.narrative[entity.start:entity.end]}' → <{entity.entity_type}>")
+    else:
+        sanitized_text = payload.narrative
+        entities_detected = 0
+        print("Presidio not available — skipping PII anonymization")
     
     # Phase C: LLM archetype classification + cinematic prompt engineering
     print(f"\n--- PHASE C: ARCHETYPE ENGINE (GROQ LLM) ---")
-    storyboard_data = await engineer_prompts(sanitized_text, payload.style, request_id=request_id)
-    
+    storyboard_data = await engineer_prompts(sanitized_text, payload.style, num_images=payload.num_images, request_id=request_id)
+
     # Graceful fallback if LLM fails
     if storyboard_data.get("_fallback"):
         logger.warning(
@@ -675,7 +742,7 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
             "total_scenes": len(completed_scenes),
             "images_generated": successful_images,
             "fallback_used": storyboard_data.get("_fallback", False),
-            "image_provider": "pollinations" if USE_POLLINATIONS else "huggingface",
+            "image_provider": "stability" if USE_STABILITY else ("pollinations" if USE_POLLINATIONS else "huggingface"),
             "watermarking": {
                 "algorithm": "AES-128-CBC",
                 "encoding": "LSB steganography",
@@ -751,25 +818,30 @@ async def generate_storyboard_stream(request: Request, payload: PitchPayload):
             
             # Phase B: SecOps
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'B', 'status': 'secops', 'message': 'SecOps: Masking sensitive data...', 'progress': 15})}\n\n"
-            analyzer_results = analyzer.analyze(
-                text=payload.narrative, 
-                entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
-                language="en"
-            )
-            anonymized_result = anonymizer.anonymize(
-                text=payload.narrative,
-                analyzer_results=analyzer_results
-            )
-            sanitized_text = anonymized_result.text
-            entities_detected = len(analyzer_results)
-            
+            if PRESIDIO_AVAILABLE and analyzer and anonymizer:
+                analyzer_results = analyzer.analyze(
+                    text=payload.narrative,
+                    entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
+                    language="en"
+                )
+                anonymized_result = anonymizer.anonymize(
+                    text=payload.narrative,
+                    analyzer_results=analyzer_results
+                )
+                sanitized_text = anonymized_result.text
+                entities_detected = len(analyzer_results)
+            else:
+                sanitized_text = payload.narrative
+                entities_detected = 0
+
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'B', 'status': 'complete', 'message': f'SecOps: {entities_detected} entities masked', 'progress': 25, 'entities_masked': entities_detected})}\n\n"
             
             # Phase C: Archetype Engine
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'C', 'status': 'llm', 'message': 'Archetype AI: Analyzing scenes...', 'progress': 35})}\n\n"
-            storyboard_data = await engineer_prompts(sanitized_text, payload.style, request_id=request_id)
+            storyboard_data = await engineer_prompts(sanitized_text, payload.style, num_images=payload.num_images, request_id=request_id)
             scenes = storyboard_data.get('scenes', [])
             total_scenes = len(scenes)
+            logger.info(f"Phase C completed. Scenes generated: {total_scenes}", extra={"request_id": request_id})
             
             # Send scene preview
             scene_preview = []
@@ -783,6 +855,7 @@ async def generate_storyboard_stream(request: Request, payload: PitchPayload):
             yield f"data: {json.dumps({'type': 'scenes_ready', 'total_scenes': total_scenes, 'scenes': scene_preview, 'progress': 40})}\n\n"
             
             # Phase D: Image Generation with Streaming
+            logger.info(f"Starting Phase D: Image generation for {total_scenes} scenes", extra={"request_id": request_id})
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'D', 'status': 'generating', 'message': f'Generating {total_scenes} images...', 'progress': 45})}\n\n"
             
             # Calculate time estimate
@@ -790,23 +863,31 @@ async def generate_storyboard_stream(request: Request, payload: PitchPayload):
             delay_between = 12  # seconds
             estimated_total = (avg_time_per_image + delay_between) * total_scenes - delay_between
             
-            yield f"data: {json.dumps({'type': 'time_estimate', 'estimated_seconds': estimated_total, 'formatted': f"~{estimated_total//60}m {estimated_total%60}s"})}\n\n"
+            formatted_time = f"~{estimated_total//60}m {estimated_total%60}s"
+            yield f"data: {json.dumps({'type': 'time_estimate', 'estimated_seconds': estimated_total, 'formatted': formatted_time})}\n\n"
             
             # Generate images sequentially with streaming
             completed_scenes = []
+            logger.info(f"Starting image generation loop for {len(scenes)} scenes", extra={"request_id": request_id})
             for index, scene in enumerate(scenes):
                 panel_num = index + 1
                 archetype = scene.get('scene_archetype', 'N/A')
                 
                 # Start panel generation
+                logger.info(f"Starting panel {panel_num} generation", extra={"request_id": request_id, "panel": panel_num})
                 yield f"data: {json.dumps({'type': 'panel_start', 'panel': panel_num, 'total': total_scenes, 'archetype': archetype, 'message': f'Panel {panel_num}: Starting generation...'})}\n\n"
                 
                 # Generate image
-                async with aiohttp.ClientSession() as session:
-                    image_path = await generate_single_image_streaming(
-                        session, scene.get('image_prompt', ''), index, 1337, request_id,
-                        lambda msg: None  # Simple callback, actual streaming handled in main loop
-                    )
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        image_path = await generate_single_image_streaming(
+                            session, scene.get('image_prompt', ''), index, 1337, request_id,
+                            lambda msg: None  # Simple callback, actual streaming handled in main loop
+                        )
+                        logger.info(f"Panel {panel_num} generation completed. Path: {image_path}", extra={"request_id": request_id, "panel": panel_num})
+                except Exception as e:
+                    logger.error(f"Panel {panel_num} generation failed: {str(e)}", extra={"request_id": request_id, "panel": panel_num, "error": str(e)})
+                    image_path = None
                 
                 scene['image_path'] = image_path
                 scene['image_generated'] = image_path is not None
@@ -817,10 +898,10 @@ async def generate_storyboard_stream(request: Request, payload: PitchPayload):
                 else:
                     yield f"data: {json.dumps({'type': 'panel_failed', 'panel': panel_num, 'total': total_scenes, 'archetype': archetype, 'message': 'Generation failed after retries', 'progress': 45 + int((panel_num / total_scenes) * 45)})}\n\n"
                 
-                # Delay between images
-                if index < len(scenes) - 1:
-                    yield f"data: {json.dumps({'type': 'waiting', 'message': 'Respecting rate limits...', 'next_panel': panel_num + 1, 'delay': 12})}\n\n"
-                    await asyncio.sleep(12)
+                if index < len(scenes) - 1 and USE_POLLINATIONS and not USE_STABILITY:
+                    delay = 15
+                    yield f"data: {json.dumps({'type': 'waiting', 'message': 'Respecting rate limits...', 'next_panel': panel_num + 1, 'delay': delay})}\n\n"
+                    await asyncio.sleep(delay)
             
             # Phase E: Complete
             successful_images = sum(1 for scene in completed_scenes if scene.get('image_generated'))
@@ -835,76 +916,16 @@ async def generate_storyboard_stream(request: Request, payload: PitchPayload):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Vercel-Disable-Buffering": "1",
             "X-Request-ID": request_id
         }
     )
 
 
 async def generate_single_image_streaming(session, prompt, index, fixed_seed, request_id, progress_callback):
-    """Version of generate_single_image that supports progress callbacks"""
-    filename = f"panel_{index+1}_{request_id}_{uuid.uuid4().hex[:8]}.png"
-    filepath = f"static/{filename}"
-    
-    try:
-        if USE_POLLINATIONS:
-            import urllib.parse
-            encoded_prompt = urllib.parse.quote(prompt[:500])
-            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&seed={fixed_seed}&nologo=true"
-            
-            max_retries = 3
-            base_delay = 5
-            
-            for attempt in range(max_retries):
-                try:
-                    async with session.get(url, timeout=120) as response:
-                        if response.status == 429:
-                            wait_time = base_delay * (2 ** attempt)
-                            await asyncio.sleep(wait_time)
-                            continue
-                        
-                        if response.status != 200:
-                            return None
-                        
-                        image_bytes = await response.read()
-                        with open(filepath, "wb") as f:
-                            f.write(image_bytes)
-                        
-                        # Watermark
-                        tracking_payload = f"Panel:{index+1}|Req:{request_id}|Time:{datetime.now().isoformat()}|Seed:{fixed_seed}"
-                        hide_data(filepath, tracking_payload)
-                        
-                        return f"/static/{filename}"
-                        
-                except Exception:
-                    if attempt < max_retries - 1:
-                        wait_time = base_delay * (2 ** attempt)
-                        await asyncio.sleep(wait_time)
-                        continue
-                    return None
-            return None
-        else:
-            # Hugging Face path
-            if not HF_API_TOKEN:
-                return None
-            headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-            payload = {"inputs": prompt, "parameters": {"seed": fixed_seed}}
-            
-            try:
-                async with session.post(HF_API_URL, headers=headers, json=payload, timeout=120) as response:
-                    if response.status != 200:
-                        return None
-                    image_bytes = await response.read()
-                    with open(filepath, "wb") as f:
-                        f.write(image_bytes)
-                    
-                    tracking_payload = f"Panel:{index+1}|Req:{request_id}|Time:{datetime.now().isoformat()}|Seed:{fixed_seed}"
-                    hide_data(filepath, tracking_payload)
-                    
-                    return f"/static/{filename}"
-            except Exception:
-                return None
-    except Exception:
-        return None
+    """Streaming version — delegates to generate_single_image (now returns URLs/data URIs)."""
+    return await generate_single_image(session, prompt, index, fixed_seed, request_id)
 
 
 @app.exception_handler(ValueError)
@@ -918,4 +939,10 @@ async def value_error_handler(request: Request, exc: ValueError):
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host=host, port=port)
+    ssl_keyfile = "key.pem"
+    ssl_certfile = "cert.pem"
+    
+    if os.path.exists(ssl_keyfile) and os.path.exists(ssl_certfile):
+        uvicorn.run(app, host=host, port=port, ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)
+    else:
+        uvicorn.run(app, host=host, port=port)
