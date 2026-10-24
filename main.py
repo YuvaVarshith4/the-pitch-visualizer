@@ -22,7 +22,11 @@ from dotenv import load_dotenv
 from typing import Optional, Dict, Any
 
 # Phase B: Local PII detection & anonymization (Microsoft Presidio)
-from presidio_config import create_secops_engines
+try:
+    from presidio_config import create_secops_engines
+    PRESIDIO_AVAILABLE = True
+except ImportError:
+    PRESIDIO_AVAILABLE = False
 
 from groq import AsyncGroq, APIError, RateLimitError
 
@@ -43,7 +47,11 @@ logger = logging.getLogger("pitch_visualizer")
 
 limiter = Limiter(key_func=get_remote_address)
 
-analyzer, anonymizer = create_secops_engines()
+if PRESIDIO_AVAILABLE:
+    analyzer, anonymizer = create_secops_engines()
+else:
+    analyzer, anonymizer = None, None
+    logger.warning("Presidio not available — PII anonymization disabled")
 
 # Phase C: Groq LLM client (prompt eng.)
 groq_client = AsyncGroq(timeout=30.0)
@@ -196,7 +204,7 @@ async def serve_frontend():
 async def health_check():
     """Health check endpoint with dependency status"""
     dependencies = {
-        "presidio": True,  
+        "presidio": PRESIDIO_AVAILABLE,
         "groq_api": False
     }
     
@@ -217,7 +225,7 @@ async def health_check():
         "dependencies": dependencies,
         "features_ready": {
             "phase_a_ingestion": True,
-            "phase_b_secops": True,
+            "phase_b_secops": PRESIDIO_AVAILABLE,
             "phase_c_continuity": dependencies["groq_api"]
         }
     }
@@ -659,26 +667,31 @@ async def generate_storyboard(request: Request, payload: PitchPayload):
     # Phase B: PII before external API calls
     print(f"\n--- PHASE B: SECOPS SANITIZATION ---")
     print(f"RAW NARRATIVE: {payload.narrative}")
-    
-    analyzer_results = analyzer.analyze(
-        text=payload.narrative, 
-        entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
-        language="en"
-    )
-    
-    anonymized_result = anonymizer.anonymize(
-        text=payload.narrative,
-        analyzer_results=analyzer_results
-    )
-    
-    sanitized_text = anonymized_result.text
-    entities_detected = len(analyzer_results)
-    
-    print(f"SANITIZED: {sanitized_text}")
-    print(f"Entities Masked: {entities_detected}")
-    if analyzer_results:
-        for entity in analyzer_results:
-            print(f"  - {entity.entity_type}: '{payload.narrative[entity.start:entity.end]}' → <{entity.entity_type}>")
+
+    if PRESIDIO_AVAILABLE and analyzer and anonymizer:
+        analyzer_results = analyzer.analyze(
+            text=payload.narrative,
+            entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
+            language="en"
+        )
+
+        anonymized_result = anonymizer.anonymize(
+            text=payload.narrative,
+            analyzer_results=analyzer_results
+        )
+
+        sanitized_text = anonymized_result.text
+        entities_detected = len(analyzer_results)
+
+        print(f"SANITIZED: {sanitized_text}")
+        print(f"Entities Masked: {entities_detected}")
+        if analyzer_results:
+            for entity in analyzer_results:
+                print(f"  - {entity.entity_type}: '{payload.narrative[entity.start:entity.end]}' → <{entity.entity_type}>")
+    else:
+        sanitized_text = payload.narrative
+        entities_detected = 0
+        print("Presidio not available — skipping PII anonymization")
     
     # Phase C: LLM archetype classification + cinematic prompt engineering
     print(f"\n--- PHASE C: ARCHETYPE ENGINE (GROQ LLM) ---")
@@ -805,18 +818,22 @@ async def generate_storyboard_stream(request: Request, payload: PitchPayload):
             
             # Phase B: SecOps
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'B', 'status': 'secops', 'message': 'SecOps: Masking sensitive data...', 'progress': 15})}\n\n"
-            analyzer_results = analyzer.analyze(
-                text=payload.narrative, 
-                entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
-                language="en"
-            )
-            anonymized_result = anonymizer.anonymize(
-                text=payload.narrative,
-                analyzer_results=analyzer_results
-            )
-            sanitized_text = anonymized_result.text
-            entities_detected = len(analyzer_results)
-            
+            if PRESIDIO_AVAILABLE and analyzer and anonymizer:
+                analyzer_results = analyzer.analyze(
+                    text=payload.narrative,
+                    entities=["PERSON", "ORGANIZATION", "MONEY", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"],
+                    language="en"
+                )
+                anonymized_result = anonymizer.anonymize(
+                    text=payload.narrative,
+                    analyzer_results=analyzer_results
+                )
+                sanitized_text = anonymized_result.text
+                entities_detected = len(analyzer_results)
+            else:
+                sanitized_text = payload.narrative
+                entities_detected = 0
+
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'B', 'status': 'complete', 'message': f'SecOps: {entities_detected} entities masked', 'progress': 25, 'entities_masked': entities_detected})}\n\n"
             
             # Phase C: Archetype Engine
