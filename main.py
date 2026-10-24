@@ -916,6 +916,8 @@ async def generate_storyboard_stream(request: Request, payload: PitchPayload):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Vercel-Disable-Buffering": "1",
             "X-Request-ID": request_id
         }
     )
