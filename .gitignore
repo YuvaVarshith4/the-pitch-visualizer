@@ -28,6 +28,9 @@ env/
 # Environment Variables
 .env
 
+# SSL certificates
+*.pem
+
 # IDE
 .vscode/
 .idea/

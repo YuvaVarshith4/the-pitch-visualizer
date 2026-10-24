@@ -146,7 +146,7 @@
             <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
             
             <form id="pitchForm" class="space-y-6">
-                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
                     <div class="lg:col-span-1">
                         <label class="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
                             <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,6 +159,23 @@
                             <option value="Flat corporate vector art, clean lines, minimalist">Corporate Vector Art</option>
                             <option value="Cyberpunk, neon lighting, dark background">Cyberpunk Neon</option>
                             <option value="Soft watercolor, bright and optimistic">Optimistic Watercolor</option>
+                        </select>
+                    </div>
+                    <div class="lg:col-span-1">
+                        <label class="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            No. of Images
+                        </label>
+                        <select id="numImagesSelect" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all input-focus cursor-pointer hover:bg-white">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
                         </select>
                     </div>
                     <div class="lg:col-span-3">
@@ -410,7 +427,7 @@
                 scenes: data.scenes.length,
                 totalImages: data.scenes.length,
                 successfulImages: data.successful_images,
-                thumbnail: firstImage ? `http://localhost:8000${firstImage}` : null,
+                thumbnail: firstImage ? `${firstImage}` : null,
                 data: data
             };
             
@@ -449,7 +466,7 @@
             panel.id = `panel-${index}`;
             
             const hasImage = scene.image_path && scene.image_generated;
-            const imageUrl = hasImage ? `http://localhost:8000${scene.image_path}` : '';
+            const imageUrl = hasImage ? `${scene.image_path}` : '';
             
             panel.innerHTML = `
                 <div class="relative pb-[75%] bg-slate-100 overflow-hidden group">
@@ -532,7 +549,7 @@
             
             try {
                 // Call backend to regenerate single panel
-                const response = await fetch('http://localhost:8000/api/regenerate-panel', {
+                const response = await fetch('/api/regenerate-panel', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -670,6 +687,7 @@
             
             const narrative = document.getElementById('narrativeInput').value;
             const style = document.getElementById('styleSelect').value;
+            const num_images = parseInt(document.getElementById('numImagesSelect').value);
             const btn = document.getElementById('generateBtn');
             const statusDiv = document.getElementById('statusMessage');
             const storyboardSection = document.getElementById('storyboardSection');
@@ -711,10 +729,10 @@
 
             // Use POST with fetch for streaming since EventSource doesn't support POST body
             try {
-                const response = await fetch('http://localhost:8000/api/generate-stream', {
+                const response = await fetch('/api/generate-stream', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ narrative, style })
+                    body: JSON.stringify({ narrative, style, num_images })
                 });
 
                 if (!response.ok) {
@@ -753,10 +771,10 @@
                 
                 // Show fallback to regular API
                 try {
-                    const response = await fetch('http://localhost:8000/api/generate', {
+                    const response = await fetch('/api/generate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ narrative, style })
+                        body: JSON.stringify({ narrative, style, num_images })
                     });
                     const result = await response.json();
                     if (result.status === 'success') {
@@ -840,10 +858,14 @@
                     };
                     
                     const oldPanel = document.getElementById(`panel-${panelIndex}`);
+                    const tempContainer = document.createElement('div');
+                    renderPanel(scene, panelIndex, tempContainer);
+                    const newPanel = tempContainer.firstElementChild;
                     if (oldPanel) {
-                        oldPanel.remove();
+                        oldPanel.replaceWith(newPanel);
+                    } else {
+                        grid.appendChild(newPanel);
                     }
-                    renderPanel(scene, panelIndex, grid);
                     break;
 
                 case 'panel_failed':

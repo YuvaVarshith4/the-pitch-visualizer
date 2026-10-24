@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+static/*.png
+nohup.out
+server.log
+cert.pem
+key.pem
+docker-compose.yml
+Dockerfile
+k8s-deployment.yaml
+nginx.conf
+deploy.sh
+decoder_gui.py
