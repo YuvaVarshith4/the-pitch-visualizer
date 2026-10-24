@@ -18,7 +18,10 @@ The Pitch Visualizer is an AI-powered cinematic storyboarding service that inges
 - [Key Features](#key-features)
 - [Architecture](#architecture)
 - [Tech Stack](#tech-stack)
-- [Setup & Installation](#setup--installation)
+- [Quick Start](#quick-start)
+- [Docker Setup](#docker-setup)
+- [Vercel Deployment](#vercel-deployment)
+- [Manual Setup](#manual-setup)
 - [API Key Management](#api-key-management)
 - [Usage](#usage)
 - [API Endpoints](#api-endpoints)
@@ -38,6 +41,7 @@ A powerful narrative is the cornerstone of any effective sales pitch. Storytelli
 - **Zero-Trust SecOps**: Automatic PII detection and masking before external API calls
 - **Visual Consistency**: Fixed seed parameter ensures coherent style across all panels
 - **Cryptographic Watermarking**: AES-128 encrypted tracking data embedded in every image
+- **Configurable Panel Count**: Choose 1-7 images per storyboard
 
 ---
 
@@ -48,10 +52,11 @@ A powerful narrative is the cornerstone of any effective sales pitch. Storytelli
 | Feature | Description |
 |---------|-------------|
 | **Text Input** | Accepts 3-7 sentence narratives (business, personal, daily life) |
-| **Narrative Segmentation** | Algorithmically breaks input into 3-5 logical scenes using LLM |
+| **Narrative Segmentation** | Algorithmically breaks input into logical scenes using LLM |
 | **Intelligent Prompt Engineering** | LLM-powered transformation of text into highly detailed, artistic prompts |
-| **Image Generation** | Async parallel generation using FLUX.1-schnell via Hugging Face or Pollinations.ai |
+| **Image Generation** | Async generation using Pollinations.ai (free) or Hugging Face FLUX.1-schnell |
 | **Storyboard Presentation** | Beautiful HTML interface displaying panels with captions |
+| **Configurable Image Count** | Select 1-7 panels per storyboard via dropdown |
 
 ### Bonus Objectives (Implemented)
 
@@ -59,9 +64,11 @@ A powerful narrative is the cornerstone of any effective sales pitch. Storytelli
 |---------|----------------|
 | **Visual Consistency** | Fixed seed (1337) across all panels + style keywords appended to every prompt |
 | **User-Selectable Styles** | 4 visual styles: Cinematic Photorealism, Corporate Vector, Cyberpunk, Watercolor |
-| **LLM-Powered Prompt Refinement** | Groq API (Llama 3.3 70B) for archetype detection and prompt enhancement |
+| **LLM-Powered Prompt Refinement** | Groq API for archetype detection and prompt enhancement |
 | **Dynamic UI** | Modern Tailwind CSS interface with real-time streaming progress |
 | **Enterprise Security** | Microsoft Presidio PII anonymization + AES-128 steganographic watermarks |
+| **Docker Support** | One-command deployment with Docker Compose |
+| **Vercel Deployment** | Serverless deployment with base64 image delivery |
 
 ---
 
@@ -97,15 +104,16 @@ The system follows a 6-phase pipeline architecture:
 - Auto-masking: "Acme Corp's $5M deficit" → `<ORGANIZATION>'s <MONEY> deficit`
 
 **Phase C: The Continuity Engine**
-- Groq API with Llama 3.3 70B for prompt engineering
+- Groq API for prompt engineering
 - 17 scene archetypes with matched lighting and camera angles
 - Dynamic character casting based on scene context
 - Retry logic with exponential backoff
 
-**Phase D: High-Speed Parallel Generation**
+**Phase D: High-Speed Image Generation**
 - Python asyncio for concurrent image generation
 - Fixed seed (1337) for visual continuity
-- Hugging Face FLUX.1-schnell or Pollinations.ai (free, no API key)
+- Pollinations.ai (free, no API key) or Hugging Face FLUX.1-schnell
+- In-memory processing with base64 delivery (serverless compatible)
 
 **Phase E: Cryptographic Deal Tracking**
 - AES-128-CBC encryption for payload
@@ -113,7 +121,7 @@ The system follows a 6-phase pipeline architecture:
 - Embedded metadata: panel ID, request ID, timestamp, seed
 
 **Phase F: Dynamic Assembly & Rendering**
-- Jinja2-less HTML template approach
+- Server-Sent Events (SSE) for real-time progress streaming
 - Direct DOM manipulation with JavaScript
 - Gallery feature for previous storyboards
 
@@ -123,25 +131,22 @@ The system follows a 6-phase pipeline architecture:
 
 **How We Divide Content into Chunks:**
 
-The system uses an **LLM-powered semantic segmentation engine** (Phase C: Continuity Engine) to break narratives into 3-5 meaningful scenes rather than simple sentence splits:
+The system uses an **LLM-powered semantic segmentation engine** (Phase C: Continuity Engine) to break narratives into meaningful scenes rather than simple sentence splits:
 
-1. **Sentence Boundary Analysis**: Input is first tokenized at natural sentence boundaries (periods, exclamation marks, question marks)
-2. **Archetype Classification**: Each sentence is classified into one of **17 scene archetypes** (crisis, discovery, action, outcome, connection, struggle, joy, etc.) using Groq LLM (Llama 3.3 70B)
-3. **Logical Grouping**: Adjacent sentences with complementary archetypes are grouped (e.g., "crisis → discovery → outcome" forms a natural 3-panel progression)
+1. **Sentence Boundary Analysis**: Input is first tokenized at natural sentence boundaries
+2. **Archetype Classification**: Each sentence is classified into one of **17 scene archetypes** (crisis, discovery, action, outcome, connection, struggle, joy, etc.) using Groq LLM
+3. **Logical Grouping**: Adjacent sentences with complementary archetypes are grouped into a natural progression
 4. **Contextual Boundaries**: The LLM identifies natural transition points in the narrative flow, ensuring each chunk represents a complete emotional beat
+5. **Configurable Count**: Users select 1-7 panels; the LLM splits or merges sentences into the requested number of distinct visual beats
 
 **How We Maintain Connection & Emotion Between Chunks:**
 
-To ensure visual and emotional continuity across panels, we employ three key strategies:
-
 | Mechanism | Implementation |
 |-----------|----------------|
-| **Fixed Seed Consistency** | All images use `seed=1337` ensuring the AI model generates visually coherent style, color palette, and artistic treatment across every panel |
-| **Archetype-Matched Visual Language** | Each archetype triggers specific lighting, camera angles, and emotional framing. For example: "crisis" panels use cold harsh light with tense body language, while "connection" panels use warm golden light with close proximity — creating emotional progression that matches the narrative arc |
-| **Dynamic Character Casting** | The LLM extracts character details (age, role, emotional state) from the narrative and maintains these attributes across all scenes. A "28-year-old nurse" in panel 1 remains visually consistent in panel 4, with appropriate emotional expressions for each scene's archetype |
-| **Global Style Prefix** | The user-selected visual style (e.g., "Cinematic Photorealism, 8k, highly detailed") is prepended to EVERY prompt, ensuring artistic uniformity even as scene content varies |
-
-This approach transforms disjointed sentence-level images into a **cohesive visual narrative** where the emotional journey flows naturally from panel to panel.
+| **Fixed Seed Consistency** | All images use `seed=1337` ensuring visually coherent style across every panel |
+| **Archetype-Matched Visual Language** | Each archetype triggers specific lighting, camera angles, and emotional framing |
+| **Dynamic Character Casting** | The LLM extracts character details and maintains them across all scenes |
+| **Global Style Prefix** | The user-selected visual style is prepended to every prompt, ensuring artistic uniformity |
 
 ## Tech Stack
 
@@ -149,28 +154,135 @@ This approach transforms disjointed sentence-level images into a **cohesive visu
 |----------|------------|---------|
 | **Backend** | FastAPI | High-performance async web framework |
 | **Security** | Microsoft Presidio | Local PII detection and anonymization |
-| **LLM** | Groq API (Llama 3.3 70B) | Prompt engineering and scene segmentation |
-| **Image Gen** | Hugging Face / Pollinations.ai | FLUX.1-schnell text-to-image generation |
+| **LLM** | Groq API | Prompt engineering and scene segmentation |
+| **Image Gen** | Pollinations.ai / Hugging Face | Text-to-image generation |
 | **Steganography** | PyCryptodome + Pillow | AES-128 encryption and LSB encoding |
 | **Frontend** | Tailwind CSS + Vanilla JS | Modern responsive UI |
 | **Decoder** | Tkinter | Standalone GUI for watermark extraction |
-| **Utilities** | tenacity, aiohttp, slowapi | Retries, async HTTP, rate limiting |
+| **Deployment** | Docker + Vercel | Containerized and serverless deployment |
 
 ---
 
-## Setup & Installation
+## Quick Start
+
+### Option 1: Docker (Recommended)
+
+```bash
+git clone https://github.com/YuvaVarshith4/the-pitch-visualizer.git
+cd the-pitch-visualizer
+cp .env.example .env
+# Edit .env and add your GROQ_API_KEY
+docker compose up --build
+```
+
+Open `http://localhost:8000` in your browser.
+
+### Option 2: Local Python
+
+```bash
+git clone https://github.com/YuvaVarshith4/the-pitch-visualizer.git
+cd the-pitch-visualizer
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+cp .env.example .env
+# Edit .env and add your GROQ_API_KEY
+python main.py
+```
+
+Open `http://localhost:8000` in your browser.
+
+---
+
+## Docker Setup
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose installed
+- A Groq API key ([get one free](https://console.groq.com))
+
+### Running with Docker
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/YuvaVarshith4/the-pitch-visualizer.git
+   cd the-pitch-visualizer
+   ```
+
+2. **Create your environment file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Add your API key** — edit `.env` and set `GROQ_API_KEY`:
+   ```
+   GROQ_API_KEY=gsk_your_key_here
+   USE_POLLINATIONS=true
+   ```
+
+4. **Start the container:**
+   ```bash
+   docker compose up --build
+   ```
+
+5. **Open** `http://localhost:8000` in your browser.
+
+### Stopping
+
+```bash
+docker compose down
+```
+
+### Health Check
+
+The container includes a built-in health check. Verify with:
+```bash
+curl http://localhost:8000/health
+```
+
+---
+
+## Vercel Deployment
+
+The app is deployed as a serverless function on Vercel. Images are delivered as base64 data URIs — no storage required.
+
+### Deploy Your Own
+
+1. **Fork or clone this repo**
+2. **Install Vercel CLI:**
+   ```bash
+   npm i -g vercel
+   ```
+3. **Deploy:**
+   ```bash
+   vercel --prod
+   ```
+4. **Set environment variables** in the Vercel dashboard:
+   - `GROQ_API_KEY` — your Groq API key
+   - `USE_POLLINATIONS` — set to `true`
+
+### How It Works on Vercel
+
+- `api/index.py` imports the FastAPI app from `main.py`
+- `vercel.json` routes all requests to the serverless function or static `index.html`
+- Images are generated in-memory, watermarked, and returned as base64 data URIs
+- No file system writes (compatible with read-only serverless environments)
+
+---
+
+## Manual Setup
 
 ### Prerequisites
 
 - Python 3.10 or higher
 - pip package manager
-- (Optional) Git for cloning
 
 ### Step-by-Step Installation
 
-1. **Clone or extract the project:**
+1. **Clone the project:**
    ```bash
-   cd pitch-visualizer
+   git clone https://github.com/YuvaVarshith4/the-pitch-visualizer.git
+   cd the-pitch-visualizer
    ```
 
 2. **Create a virtual environment:**
@@ -191,59 +303,52 @@ This approach transforms disjointed sentence-level images into a **cohesive visu
 
 5. **Create environment file:**
    ```bash
-   cp .env.example .env  # Or create .env manually
+   cp .env.example .env
    ```
 
-6. **Configure API keys (see next section)**
+6. **Configure API keys** (see [API Key Management](#api-key-management))
 
 7. **Run the server:**
    ```bash
    python main.py
-   # OR for production
-   uvicorn main:app --host 0.0.0.0 --port 8000
    ```
 
-8. **Open your browser:**
-   Navigate to `http://localhost:8000`
+8. **Open** `http://localhost:8000` in your browser.
 
 ---
 
 ## API Key Management
-
-The application requires the following API keys, configured via environment variables or a `.env` file:
 
 ### Required Keys
 
 | Variable | Service | Purpose | Free Tier |
 |----------|---------|---------|-----------|
 | `GROQ_API_KEY` | [Groq](https://console.groq.com) | LLM for prompt engineering | Yes (generous limits) |
-| `HF_API_TOKEN` | [Hugging Face](https://huggingface.co/settings/tokens) | FLUX.1-schnell image gen | Required for HF mode |
 
 ### Optional Keys
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
+| `HF_API_TOKEN` | Hugging Face image generation (alternative to Pollinations) | Not required |
+| `USE_POLLINATIONS` | Use free Pollinations.ai for images | `true` |
 | `ENCRYPTION_KEY` | AES-128 encryption key | `16ByteSecretKey!` |
 | `ENCRYPTION_IV` | AES-128 initialization vector | `16ByteInitVector` |
 
 ### Environment File Example (`.env`)
 
 ```bash
-# Required API Keys
+# Required
 GROQ_API_KEY=gsk_your_groq_api_key_here
-HF_API_TOKEN=hf_your_huggingface_token_here
 
-# Optional: Use Pollinations.ai (free, no API key required)
+# Image generation (Pollinations is free, no key needed)
 USE_POLLINATIONS=true
+
+# Optional: Hugging Face (alternative image source)
+HF_API_TOKEN=hf_your_huggingface_token_here
 
 # Optional: Encryption keys for steganography
 ENCRYPTION_KEY=MySecretKey123!!
 ENCRYPTION_IV=MyInitVector123!!
-
-# Optional: Configuration
-MAX_CONCURRENT_REQUESTS=5
-LLM_TIMEOUT=30.0
-CACHE_MAXSIZE=100
 ```
 
 ### Security Notes
@@ -258,12 +363,13 @@ CACHE_MAXSIZE=100
 
 ### Web Interface
 
-1. Navigate to `http://localhost:8000`
-2. Select a visual style from the dropdown
-3. Paste your narrative (3-7 sentences) in the text area
-4. Click **"Generate Storyboard"**
-5. Watch real-time progress as panels generate
-6. View your completed storyboard with captions and AI prompts
+1. Navigate to `http://localhost:8000` (or your Vercel URL)
+2. Select a **visual style** from the dropdown
+3. Choose the **number of images** (1-7)
+4. Paste your narrative (3-7 sentences) in the text area
+5. Click **"Generate Storyboard"**
+6. Watch real-time progress as panels generate
+7. View your completed storyboard with captions and AI prompts
 
 ### Example Narratives
 
@@ -292,7 +398,7 @@ python decoder_gui.py
 ```
 
 1. Click **"Select Image to Decrypt"**
-2. Choose a storyboard PNG file from the `static/` folder
+2. Choose a storyboard PNG file
 3. View the extracted metadata (panel ID, timestamp, request ID)
 
 ---
@@ -315,7 +421,8 @@ curl -X POST http://localhost:8000/api/generate \
   -H "Content-Type: application/json" \
   -d '{
     "narrative": "Our startup struggled to find product-market fit for 18 months. We pivoted to focus on enterprise customers. Within 6 months, we landed three Fortune 500 clients.",
-    "style": "Cinematic Photorealism, 8k, highly detailed"
+    "style": "Cinematic Photorealism, 8k, highly detailed",
+    "num_images": 3
   }'
 ```
 
@@ -328,7 +435,7 @@ curl -X POST http://localhost:8000/api/generate \
 The system uses a **two-tier prompt engineering approach**:
 
 **Tier 1: Archetype Classification**
-The LLM first classifies each sentence into one of 17 archetypes:
+The LLM classifies each sentence into one of 17 archetypes:
 - **Professional**: crisis, discovery, action, outcome, relationship
 - **Personal**: conflict, struggle, routine, connection, loss, joy, transition
 - **Universal**: growth, reflection, exploration
@@ -358,8 +465,8 @@ Characters are contextually appropriate based on the scene:
 
 - **Request Rate**: 10/minute per IP (slowapi)
 - **Concurrent LLM**: Semaphore-limited to 5 requests
-- **Concurrent Images**: Sequential with 10s delays (respects Pollinations limits)
-- **Retry Logic**: Exponential backoff for all external APIs
+- **Image Generation**: Sequential with 15s delays between panels (respects Pollinations limits)
+- **Retry Logic**: Exponential backoff (5 attempts, 15s base) for 402/503/500/429 errors
 
 ---
 
@@ -369,7 +476,7 @@ Characters are contextually appropriate based on the scene:
 
 1. **Local Processing**: PII detection happens on-device via Presidio
 2. **Entity Masking**: Sensitive data replaced with tags before LLM/image APIs
-3. **No Data Logging**: Request IDs are ephemeral, images stored locally only
+3. **No Data Logging**: Request IDs are ephemeral, images delivered as base64
 
 ### Cryptographic Watermarking
 
@@ -400,10 +507,15 @@ pitch-visualizer/
 ├── stego_utils.py          # AES-128 + LSB steganography utilities
 ├── presidio_config.py      # SecOps engine configuration
 ├── requirements.txt        # Python dependencies
-├── .env                    # Environment variables (not in git)
-├── static/                 # Generated storyboard images
-├── templates/              # (Optional) Jinja2 templates
-└── venv/                   # Virtual environment
+├── .env.example            # Environment variable template
+├── Dockerfile              # Docker image definition
+├── docker-compose.yml      # Docker Compose configuration
+├── build.sh                # Vercel build script
+├── vercel.json             # Vercel deployment config
+├── api/
+│   └── index.py            # Vercel serverless entry point
+├── static/                 # Generated storyboard images (local only)
+└── .dockerignore           # Docker build exclusions
 ```
 
 ---
@@ -413,10 +525,11 @@ pitch-visualizer/
 | Issue | Solution |
 |-------|----------|
 | `ModuleNotFoundError: No module named 'spacy'` | Run `pip install -r requirements.txt` and `python -m spacy download en_core_web_sm` |
-| `429 Too Many Requests` | Increase delays in `main.py` or switch to Hugging Face |
-| `Images not generating` | Check `GROQ_API_KEY` and `HF_API_TOKEN` in `.env` |
+| `429 Too Many Requests` | Wait a moment — rate limiting is in effect. Pollinations has per-IP limits. |
+| `Images not generating` | Check `GROQ_API_KEY` in `.env`. Ensure `USE_POLLINATIONS=true` is set. |
 | `Decoder fails to extract` | Ensure same `ENCRYPTION_KEY` and `ENCRYPTION_IV` used for generation |
-| `Slow image generation` | Set `USE_POLLINATIONS=false` and use Hugging Face with GPU |
+| `Docker container unhealthy` | Run `docker compose logs` to check for missing env vars |
+| `Vercel build fails` | Ensure `build.sh` is executable and `requirements.txt` includes spaCy wheel URL |
 
 ---
 
@@ -429,11 +542,7 @@ MIT License - Feel free to use, modify, and distribute for personal or commercia
 ## Acknowledgments
 
 - **Groq** for high-speed LLM inference
+- **Pollinations.ai** for free image generation
 - **Hugging Face** for FLUX.1-schnell model hosting
-- **Pollinations.ai** for free image generation tier
 - **Microsoft Presidio** for local PII detection
 - **FastAPI** for the excellent web framework
-
----
-
-
